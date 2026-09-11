@@ -63,42 +63,35 @@
 
 // ─── Sensor Calibration Constants ────────────────────────────
 // Voltage sensor: 25V module with 5:1 divider ratio
-// Adjust VOLTAGE_CALIBRATION after comparing with a multimeter
-const float VOLTAGE_DIVIDER_RATIO = 5.0;
-float VOLTAGE_CALIBRATION = 1.0; // Fine-tune multiplier
+float VOLTAGE_DIVIDER_RATIO = 5.0;
+float VOLTAGE_CALIBRATION = 1.0;
 
 // ACS712 30A: sensitivity = 66 mV/A
-// With external voltage divider (2× 100kΩ) scaling 5V → 2.5V
-// Divider ratio = 100k / (100k + 100k) = 0.5
-// Effective sensitivity at ESP32 pin = 66 * 0.5 = 33 mV/A
-const float ACS712_SENSITIVITY = 66.0;   // mV/A (sensor spec)
-const float CURRENT_DIVIDER_RATIO = 0.5; // R2/(R1+R2) for 2× 100kΩ divider
-const float ACS712_EFF_SENSITIVITY =
-    ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO; // 33 mV/A
-float ACS712_ZERO_OFFSET = 1300.0; // mV at 0A after divider (measured idle)
+float ACS712_SENSITIVITY = 66.0;   
+float CURRENT_DIVIDER_RATIO = 0.5; 
+float ACS712_EFF_SENSITIVITY = 33.0; 
+
+float ACS712_ZERO_OFFSET = 1300.0; 
 // NOTE: Auto-calibrated on startup and saved to flash.
-//       Use CALIBRATE_ZERO BT command to re-calibrate with no load connected.
 
 // ─── Sampling ────────────────────────────────────────────────
-#define ADC_SAMPLES 64 // Number of samples to average
+int ADC_SAMPLES = 64; // Number of samples to average
 
 // ─── Connection Detection ────────────────────────────────────
-// If measured voltage is below this, no battery is connected.
-// ADC noise / residual voltage with nothing connected is typically < 1V.
 #define VOLTAGE_CONNECTED_THRESHOLD 1.0 // Volts
 
 // ─── Alert Thresholds (12V Lead-Acid) ────────────────────────
-#define VOLT_CRITICAL_LOW 10.5 // Deeply discharged / damaged
-#define VOLT_WARNING_LOW 11.5  // Low battery
-#define VOLT_NORMAL_LOW 12.0   // Acceptable minimum
-#define VOLT_FULL 12.7         // Fully charged (resting)
-#define VOLT_OVERCHARGE 14.8   // Overcharging
+float VOLT_CRITICAL_LOW = 10.5;
+float VOLT_WARNING_LOW = 11.5;
+float VOLT_NORMAL_LOW = 12.0;
+float VOLT_FULL = 12.7;
+float VOLT_OVERCHARGE = 14.8;
 
-#define TEMP_WARNING 45.0  // °C — getting hot
-#define TEMP_CRITICAL 55.0 // °C — dangerous
+float TEMP_WARNING = 45.0;
+float TEMP_CRITICAL = 55.0;
 
-#define CURRENT_WARNING 20.0  // A — high draw
-#define CURRENT_CRITICAL 28.0 // A — near sensor limit
+float CURRENT_WARNING = 20.0;
+float CURRENT_CRITICAL = 28.0;
 
 // ─── Alert States ────────────────────────────────────────────
 enum AlertLevel { ALERT_NONE, ALERT_WARNING, ALERT_CRITICAL };
@@ -229,19 +222,48 @@ void setup() {
 
   prefs.begin("batt", true);
   batteryCapacity = prefs.getInt("capacity", 100);
+  VOLT_CRITICAL_LOW = prefs.getFloat("v_crit_low", 10.5);
+  VOLT_WARNING_LOW = prefs.getFloat("v_warn_low", 11.5);
+  VOLT_NORMAL_LOW = prefs.getFloat("v_norm_low", 12.0);
+  VOLT_FULL = prefs.getFloat("v_full", 12.7);
+  VOLT_OVERCHARGE = prefs.getFloat("v_over", 14.8);
+  TEMP_WARNING = prefs.getFloat("t_warn", 45.0);
+  TEMP_CRITICAL = prefs.getFloat("t_crit", 55.0);
+  CURRENT_WARNING = prefs.getFloat("c_warn", 20.0);
+  CURRENT_CRITICAL = prefs.getFloat("c_crit", 28.0);
+  VOLTAGE_DIVIDER_RATIO = prefs.getFloat("v_div", 5.0);
+  VOLTAGE_CALIBRATION = prefs.getFloat("v_cal", 1.0);
+  ACS712_SENSITIVITY = prefs.getFloat("i_sens", 66.0);
+  CURRENT_DIVIDER_RATIO = prefs.getFloat("i_div", 0.5);
+  ACS712_EFF_SENSITIVITY = ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO;
+  ADC_SAMPLES = prefs.getInt("adc_samp", 64);
+  float savedZeroOff = prefs.getFloat("zeroOff", 0.0);
   prefs.end();
 
+  // Safeguard against accidentally saved zero values breaking the device
+  if (VOLTAGE_DIVIDER_RATIO <= 0.01) VOLTAGE_DIVIDER_RATIO = 5.0;
+  if (VOLTAGE_CALIBRATION <= 0.01) VOLTAGE_CALIBRATION = 1.0;
+  if (ACS712_SENSITIVITY <= 0.01) ACS712_SENSITIVITY = 66.0;
+  if (CURRENT_DIVIDER_RATIO <= 0.01) CURRENT_DIVIDER_RATIO = 0.5;
+  if (ADC_SAMPLES < 1) ADC_SAMPLES = 64;
+  if (batteryCapacity < 1) batteryCapacity = 100;
+
+  ACS712_EFF_SENSITIVITY = ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO;
+
   // ── Current sensor zero-offset calibration ──
-  // Auto-calibrate every boot by sampling the current pin.
-  // Assumes no load is flowing through ACS712 at power-on.
-  Serial.println("  Auto-calibrating current sensor...");
-  long calSum = 0;
-  for (int i = 0; i < 200; i++) {
-    calSum += analogReadMilliVolts(CURRENT_PIN);
-    delay(5);
+  if (savedZeroOff > 0) {
+    ACS712_ZERO_OFFSET = savedZeroOff;
+    Serial.printf("  Loaded ACS712 zero offset from flash: %.1f mV\n", ACS712_ZERO_OFFSET);
+  } else {
+    Serial.println("  Auto-calibrating current sensor...");
+    long calSum = 0;
+    for (int i = 0; i < 200; i++) {
+      calSum += analogReadMilliVolts(CURRENT_PIN);
+      delay(5);
+    }
+    ACS712_ZERO_OFFSET = calSum / 200.0;
+    Serial.printf("  ACS712 zero offset: %.1f mV\n", ACS712_ZERO_OFFSET);
   }
-  ACS712_ZERO_OFFSET = calSum / 200.0;
-  Serial.printf("  ACS712 zero offset: %.1f mV\n", ACS712_ZERO_OFFSET);
 
   // Start the WiFi Access Point
   connectWiFi();
@@ -879,10 +901,44 @@ void processBluetoothCommand(String cmd) {
       Serial.printf("Capacity saved: %d Ah\n", batteryCapacity);
     }
   }
+  // ── CONFIG_SET ──
+  else if (cmd.startsWith("CONFIG_SET:")) {
+    String jsonStr = cmd.substring(11);
+    StaticJsonDocument<1024> doc;
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    
+    if (error) {
+      SerialBT.println("{\"cmd\":\"CONFIG_SET\",\"status\":\"error\",\"msg\":\"Invalid JSON\"}");
+    } else {
+      prefs.begin("batt", false);
+      if (doc.containsKey("v_crit_low")) { VOLT_CRITICAL_LOW = doc["v_crit_low"]; prefs.putFloat("v_crit_low", VOLT_CRITICAL_LOW); }
+      if (doc.containsKey("v_warn_low")) { VOLT_WARNING_LOW = doc["v_warn_low"]; prefs.putFloat("v_warn_low", VOLT_WARNING_LOW); }
+      if (doc.containsKey("v_norm_low")) { VOLT_NORMAL_LOW = doc["v_norm_low"]; prefs.putFloat("v_norm_low", VOLT_NORMAL_LOW); }
+      if (doc.containsKey("v_full")) { VOLT_FULL = doc["v_full"]; prefs.putFloat("v_full", VOLT_FULL); }
+      if (doc.containsKey("v_over")) { VOLT_OVERCHARGE = doc["v_over"]; prefs.putFloat("v_over", VOLT_OVERCHARGE); }
+      if (doc.containsKey("t_warn")) { TEMP_WARNING = doc["t_warn"]; prefs.putFloat("t_warn", TEMP_WARNING); }
+      if (doc.containsKey("t_crit")) { TEMP_CRITICAL = doc["t_crit"]; prefs.putFloat("t_crit", TEMP_CRITICAL); }
+      if (doc.containsKey("c_warn")) { CURRENT_WARNING = doc["c_warn"]; prefs.putFloat("c_warn", CURRENT_WARNING); }
+      if (doc.containsKey("c_crit")) { CURRENT_CRITICAL = doc["c_crit"]; prefs.putFloat("c_crit", CURRENT_CRITICAL); }
+      if (doc.containsKey("v_div")) { VOLTAGE_DIVIDER_RATIO = doc["v_div"]; prefs.putFloat("v_div", VOLTAGE_DIVIDER_RATIO); }
+      if (doc.containsKey("v_cal")) { VOLTAGE_CALIBRATION = doc["v_cal"]; prefs.putFloat("v_cal", VOLTAGE_CALIBRATION); }
+      if (doc.containsKey("i_sens")) { ACS712_SENSITIVITY = doc["i_sens"]; prefs.putFloat("i_sens", ACS712_SENSITIVITY); }
+      if (doc.containsKey("i_div")) { CURRENT_DIVIDER_RATIO = doc["i_div"]; prefs.putFloat("i_div", CURRENT_DIVIDER_RATIO); }
+      if (doc.containsKey("adc_samp")) { ADC_SAMPLES = doc["adc_samp"]; prefs.putInt("adc_samp", ADC_SAMPLES); }
+      if (doc.containsKey("capacity")) { batteryCapacity = doc["capacity"]; prefs.putInt("capacity", batteryCapacity); }
+      prefs.end();
+      
+      // Update effective sensitivity
+      ACS712_EFF_SENSITIVITY = ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO;
+      
+      SerialBT.println("{\"cmd\":\"CONFIG_SET\",\"status\":\"saved\"}");
+      Serial.println("Configuration updated via Bluetooth.");
+    }
+  }
   // ── Unknown command ──
   else {
     SerialBT.println("{\"cmd\":\"UNKNOWN\",\"msg\":\"Commands: WIFI_SET, "
-                     "WIFI_STATUS, WIFI_CLEAR, READ, PING, CALIBRATE_ZERO\"}");
+                     "WIFI_STATUS, WIFI_CLEAR, READ, PING, CALIBRATE_ZERO, CONFIG_SET\"}");
   }
 }
 
@@ -890,14 +946,21 @@ void sendBluetoothData() {
   if (!SerialBT.hasClient())
     return;
 
-  StaticJsonDocument<384> doc;
+  // Sanitize values to prevent NaN which breaks JSON parsing in Flutter
+  float v = isnan(currentVoltage) ? 0.0 : round2(currentVoltage);
+  float i = isnan(currentCurrent) ? 0.0 : round2(currentCurrent);
+  float t = isnan(currentTemperature) ? 0.0 : round1(currentTemperature);
+  float p = isnan(currentPower) ? 0.0 : round2(currentPower);
+  float l = isnan(timeLeft) ? 0.0 : round2(timeLeft);
+
+  StaticJsonDocument<512> doc;
   doc["connected"] = batteryConnected;
-  doc["v"] = round2(currentVoltage);
-  doc["i"] = round2(currentCurrent);
-  doc["t"] = round1(currentTemperature);
-  doc["p"] = round2(currentPower);
+  doc["v"] = v;
+  doc["i"] = i;
+  doc["t"] = t;
+  doc["p"] = p;
   doc["pct"] = batteryPercent;
-  doc["time_left"] = round2(timeLeft);
+  doc["time_left"] = l;
   doc["health"] = batteryHealth;
   doc["capacity"] = batteryCapacity;
   doc["ts"] = millis();

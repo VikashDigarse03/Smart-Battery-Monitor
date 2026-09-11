@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/database/app_database.dart';
+import '../../../../data/services/esp32_service.dart';
 import '../../../core/theme.dart';
 
 /// Settings screen for configuring thresholds, ESP32 calibration, and connection.
@@ -305,14 +306,29 @@ class _SettingsViewState extends State<SettingsView> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Settings push will be available after Bluetooth implementation',
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Not connected to ESP32 via Bluetooth'),
+                              backgroundColor: AppTheme.statusWarning,
                             ),
-                          ),
-                        );
+                          );
+                          return;
+                        }
+                        
+                        final success = await btService.pushSettings(_settings);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success 
+                                  ? 'Settings pushed to ESP32 successfully'
+                                  : 'Failed to push settings'),
+                              backgroundColor: success ? AppTheme.statusGood : AppTheme.statusCritical,
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.upload_rounded),
                       label: const Text('Push to ESP32'),
@@ -322,14 +338,27 @@ class _SettingsViewState extends State<SettingsView> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Calibrate Zero will send CALIBRATE_ZERO command to ESP32',
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Not connected to ESP32 via Bluetooth'),
+                              backgroundColor: AppTheme.statusWarning,
                             ),
-                          ),
-                        );
+                          );
+                          return;
+                        }
+                        
+                        await btService.calibrateZeroCurrent();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Sent CALIBRATE_ZERO command to ESP32'),
+                              backgroundColor: AppTheme.statusGood,
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.balance),
                       label: const Text('Calibrate Zero Current'),

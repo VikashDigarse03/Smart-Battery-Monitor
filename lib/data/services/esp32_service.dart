@@ -254,6 +254,63 @@ class Esp32BluetoothService {
     }
   }
 
+  /// Push configuration settings to the ESP32.
+  Future<bool> pushSettings(Map<String, String> settings) async {
+    if (!isConnected) return false;
+
+    final Map<String, dynamic> espSettings = {};
+    
+    void parseAndAdd(String destKey, String srcKey) {
+      if (settings.containsKey(srcKey)) {
+        final val = double.tryParse(settings[srcKey]!);
+        if (val != null) espSettings[destKey] = val;
+      }
+    }
+    
+    void parseIntAndAdd(String destKey, String srcKey) {
+      if (settings.containsKey(srcKey)) {
+        final val = int.tryParse(settings[srcKey]!);
+        if (val != null) espSettings[destKey] = val;
+      }
+    }
+
+    parseAndAdd('v_crit_low', 'volt_critical_low');
+    parseAndAdd('v_warn_low', 'volt_warning_low');
+    parseAndAdd('v_norm_low', 'volt_normal_low');
+    parseAndAdd('v_full', 'volt_full');
+    parseAndAdd('v_over', 'volt_overcharge');
+    
+    parseAndAdd('t_warn', 'temp_warning');
+    parseAndAdd('t_crit', 'temp_critical');
+    
+    parseAndAdd('c_warn', 'current_warning');
+    parseAndAdd('c_crit', 'current_critical');
+    
+    parseAndAdd('v_div', 'voltage_divider_ratio');
+    parseAndAdd('v_cal', 'voltage_calibration');
+    
+    parseAndAdd('i_sens', 'acs712_sensitivity');
+    parseAndAdd('i_div', 'current_divider_ratio');
+    
+    parseIntAndAdd('adc_samp', 'adc_samples');
+    parseIntAndAdd('capacity', 'battery_capacity_ah');
+
+    try {
+      final jsonStr = jsonEncode(espSettings);
+      await sendCommand('CONFIG_SET:$jsonStr');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Trigger zero-current calibration on the ESP32.
+  Future<void> calibrateZeroCurrent() async {
+    if (isConnected) {
+      await sendCommand('CALIBRATE_ZERO');
+    }
+  }
+
   /// Disconnect the active Bluetooth session.
   void disconnect() {
     _connection?.close();
