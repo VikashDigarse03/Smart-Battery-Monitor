@@ -25,13 +25,27 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Upgraded to v2 to support rack-level specs
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
       onConfigure: (db) async {
-        // Enable foreign key constraints
         await db.execute('PRAGMA foreign_keys = ON');
       },
     );
+  }
+  
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // Since this is pre-production, simply wipe and recreate.
+    await db.execute('DROP TABLE IF EXISTS app_settings');
+    await db.execute('DROP TABLE IF EXISTS battery_events');
+    await db.execute('DROP TABLE IF EXISTS measurements');
+    await db.execute('DROP TABLE IF EXISTS battery_assignments');
+    await db.execute('DROP TABLE IF EXISTS batteries');
+    await db.execute('DROP TABLE IF EXISTS rack_positions');
+    await db.execute('DROP TABLE IF EXISTS racks');
+    await db.execute('DROP TABLE IF EXISTS rooms');
+    await db.execute('DROP TABLE IF EXISTS devices');
+    await _onCreate(db, newVersion);
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -53,6 +67,9 @@ class AppDatabase {
         room_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         position_count INTEGER NOT NULL DEFAULT 20,
+        battery_type TEXT NOT NULL DEFAULT 'Lead Acid',
+        nominal_voltage REAL NOT NULL DEFAULT 12.0,
+        capacity_ah REAL NOT NULL DEFAULT 100.0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
@@ -76,12 +93,7 @@ class AppDatabase {
       CREATE TABLE batteries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         battery_id TEXT NOT NULL UNIQUE,
-        manufacturer TEXT,
-        model TEXT,
         serial_number TEXT,
-        battery_type TEXT NOT NULL DEFAULT 'Lead Acid',
-        nominal_voltage REAL NOT NULL DEFAULT 12.0,
-        capacity_ah REAL,
         status TEXT NOT NULL DEFAULT 'active',
         installation_date TEXT,
         retirement_date TEXT,

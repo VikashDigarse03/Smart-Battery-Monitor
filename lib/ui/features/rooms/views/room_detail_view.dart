@@ -38,27 +38,49 @@ class _RoomDetailViewState extends State<RoomDetailView> {
   Future<void> _addRack() async {
     final nameController = TextEditingController();
     final posCountController = TextEditingController(text: '20');
+    final batteryTypeController = TextEditingController(text: 'Lead Acid');
+    final voltageController = TextEditingController(text: '12.0');
+    final capacityController = TextEditingController(text: '100.0');
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Rack'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Rack Name'),
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: posCountController,
-              decoration:
-                  const InputDecoration(labelText: 'Number of Positions'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Rack Name'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: posCountController,
+                decoration:
+                    const InputDecoration(labelText: 'Number of Positions (Slots)'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: batteryTypeController,
+                decoration: const InputDecoration(labelText: 'Battery Type'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: voltageController,
+                decoration: const InputDecoration(labelText: 'Nominal Voltage (V)'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: capacityController,
+                decoration: const InputDecoration(labelText: 'Capacity (Ah)'),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -79,6 +101,9 @@ class _RoomDetailViewState extends State<RoomDetailView> {
         widget.roomId,
         nameController.text.trim(),
         positionCount: int.tryParse(posCountController.text) ?? 20,
+        batteryType: batteryTypeController.text.trim(),
+        nominalVoltage: double.tryParse(voltageController.text) ?? 12.0,
+        capacityAh: double.tryParse(capacityController.text) ?? 100.0,
       );
       _loadData();
     }

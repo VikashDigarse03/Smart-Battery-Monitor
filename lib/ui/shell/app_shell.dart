@@ -23,20 +23,20 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final location = GoRouterState.of(context).uri.path;
     final currentIndex = _currentIndex(context);
+    final isRootOfTab = location == '/rooms' || location == '/devices' || location == '/settings';
 
-    return Scaffold(
-      body: child,
-      // Floating action button for the primary action: Scan Battery
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'scan_fab',
-        onPressed: () => context.pushNamed('scan-battery'),
-        icon: const Icon(Icons.qr_code_scanner_rounded),
-        label: const Text('Scan'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.black,
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    return PopScope(
+      canPop: !isRootOfTab,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (isRootOfTab) {
+          context.goNamed('dashboard');
+        }
+      },
+      child: Scaffold(
+        body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (index) {
@@ -76,6 +76,6 @@ class AppShell extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }

@@ -77,6 +77,9 @@ class LocationRepository {
     int roomId,
     String name, {
     int positionCount = 20,
+    String batteryType = 'Lead Acid',
+    double nominalVoltage = 12.0,
+    double capacityAh = 100.0,
   }) async {
     final db = await _db.database;
     final now = DateTime.now().toIso8601String();
@@ -87,6 +90,9 @@ class LocationRepository {
         'room_id': roomId,
         'name': name,
         'position_count': positionCount,
+        'battery_type': batteryType,
+        'nominal_voltage': nominalVoltage,
+        'capacity_ah': capacityAh,
         'created_at': now,
         'updated_at': now,
       });
@@ -107,6 +113,50 @@ class LocationRepository {
   Future<void> deleteRack(int id) async {
     final db = await _db.database;
     await db.delete('racks', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> updateRackPositionCount(int rackId, int newCount) async {
+    final db = await _db.database;
+    
+    await db.transaction((txn) async {
+      final rackList = await txn.query('racks', where: 'id = ?', whereArgs: [rackId]);
+      if (rackList.isEmpty) return;
+      
+      final currentCount = (rackList.first['position_count'] as int?) ?? 0;
+      if (newCount == currentCount) return;
+      
+      if (newCount > currentCount) {
+        // Add new positions
+        final now = DateTime.now().toIso8601String();
+        for (int i = currentCount + 1; i <= newCount; i++) {
+          await txn.insert('rack_positions', {
+            'rack_id': rackId,
+            'position_number': i,
+            'created_at': now,
+          });
+        }
+      } else {
+        // Remove positions (check if empty first)
+        final positionsToRemove = await txn.rawQuery('''
+          SELECT rp.id FROM rack_positions rp
+          JOIN batteries b ON b.current_position_id = rp.id
+          WHERE rp.rack_id = ? AND rp.position_number > ? AND b.status = 'active'
+        ''', [rackId, newCount]);
+        
+        if (positionsToRemove.isNotEmpty) {
+          throw Exception('Cannot reduce position count: Some positions being removed contain active batteries.');
+        }
+        
+        await txn.delete('rack_positions', where: 'rack_id = ? AND position_number > ?', whereArgs: [rackId, newCount]);
+      }
+      
+      await txn.update(
+        'racks',
+        {'position_count': newCount, 'updated_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [rackId],
+      );
+    });
   }
 
   // ─── Rack Positions ─────────────────────────────────────────
@@ -165,6 +215,9 @@ class LocationRepository {
       roomId: row['room_id'] as int,
       name: row['name'] as String,
       positionCount: (row['position_count'] as int?) ?? 20,
+      batteryType: (row['battery_type'] as String?) ?? 'Lead Acid',
+      nominalVoltage: (row['nominal_voltage'] as num?)?.toDouble() ?? 12.0,
+      capacityAh: (row['capacity_ah'] as num?)?.toDouble() ?? 100.0,
       createdAt: DateTime.parse(row['created_at'] as String),
       updatedAt: DateTime.parse(row['updated_at'] as String),
     );

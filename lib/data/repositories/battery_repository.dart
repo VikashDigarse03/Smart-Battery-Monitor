@@ -8,7 +8,14 @@ class BatteryRepository {
 
   BatteryRepository(this._db);
 
-  /// Generates the next unique battery ID (e.g., BAT-000001).
+  /// Peeks at the next unique battery ID without incrementing it.
+  Future<String> peekNextBatteryId() async {
+    final numberStr = await _db.getSetting('next_battery_number');
+    final number = int.parse(numberStr ?? '1');
+    return 'BAT-${number.toString().padLeft(6, '0')}';
+  }
+
+  /// Generates the next unique battery ID and increments the counter.
   Future<String> generateNextBatteryId() async {
     final numberStr = await _db.getSetting('next_battery_number');
     final number = int.parse(numberStr ?? '1');
@@ -25,12 +32,7 @@ class BatteryRepository {
     final now = DateTime.now().toIso8601String();
     return await db.insert('batteries', {
       'battery_id': battery.batteryId,
-      'manufacturer': battery.manufacturer,
-      'model': battery.model,
       'serial_number': battery.serialNumber,
-      'battery_type': battery.batteryType,
-      'nominal_voltage': battery.nominalVoltage,
-      'capacity_ah': battery.capacityAh,
       'status': battery.status.toDbString(),
       'installation_date': battery.installationDate?.toIso8601String(),
       'retirement_date': battery.retirementDate?.toIso8601String(),
@@ -280,12 +282,7 @@ class BatteryRepository {
     return Battery(
       id: row['id'] as int?,
       batteryId: row['battery_id'] as String,
-      manufacturer: row['manufacturer'] as String?,
-      model: row['model'] as String?,
       serialNumber: row['serial_number'] as String?,
-      batteryType: (row['battery_type'] as String?) ?? 'Lead Acid',
-      nominalVoltage: (row['nominal_voltage'] as num?)?.toDouble() ?? 12.0,
-      capacityAh: (row['capacity_ah'] as num?)?.toDouble(),
       status: BatteryStatus.fromString(
         (row['status'] as String?) ?? 'active',
       ),

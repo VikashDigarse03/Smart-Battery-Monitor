@@ -6,7 +6,6 @@ import '../ui/features/rooms/views/rooms_list_view.dart';
 import '../ui/features/rooms/views/room_detail_view.dart';
 import '../ui/features/rooms/views/rack_detail_view.dart';
 import '../ui/features/batteries/views/battery_detail_view.dart';
-import '../ui/features/batteries/views/add_battery_view.dart';
 import '../ui/features/measurement/views/scan_battery_view.dart';
 import '../ui/features/measurement/views/measurement_view.dart';
 import '../ui/features/devices/views/devices_list_view.dart';
@@ -106,12 +105,6 @@ final GoRouter appRouter = GoRouter(
             int.parse(state.pathParameters['batteryDbId']!);
         return BatteryDetailView(batteryDbId: batteryDbId);
       },
-    ),
-    GoRoute(
-      path: '/add-battery',
-      name: 'add-battery',
-      parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => const AddBatteryView(),
     ),
     GoRoute(
       path: '/reports',

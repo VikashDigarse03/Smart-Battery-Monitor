@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../data/database/app_database.dart';
+import '../../../../data/services/esp32_service.dart';
 import '../../../core/theme.dart';
 
 /// Settings screen for configuring thresholds, ESP32 calibration, and connection.
@@ -76,6 +78,65 @@ class _SettingsViewState extends State<SettingsView> {
     }
   }
 
+  Future<void> _pushToEsp32() async {
+    final btService = context.read<Esp32BluetoothService>();
+    if (!btService.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please connect to ESP32 via Bluetooth on the Dashboard first.'),
+          backgroundColor: AppTheme.statusWarning,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Build config payload
+      final payload = {
+        "cmd": "config",
+        "ssid": _settings['esp32_wifi_ssid'] ?? "",
+        "pass": _settings['esp32_wifi_password'] ?? "",
+        "v_div": double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
+        "v_cal": double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
+        "i_div": double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
+        "i_sens": double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
+        "i_zero": double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ?? 1300.0,
+        "adc_samp": int.tryParse(_settings['adc_samples'] ?? '64') ?? 64,
+        "cap": int.tryParse(_settings['battery_capacity_ah'] ?? '100') ?? 100,
+        "v_crit_L": double.tryParse(_settings['volt_critical_low'] ?? '10.5') ?? 10.5,
+        "v_warn_L": double.tryParse(_settings['volt_warning_low'] ?? '11.5') ?? 11.5,
+        "v_norm_L": double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
+        "v_full": double.tryParse(_settings['volt_full'] ?? '12.7') ?? 12.7,
+        "v_over": double.tryParse(_settings['volt_overcharge'] ?? '14.8') ?? 14.8,
+        "t_warn": double.tryParse(_settings['temp_warning'] ?? '45.0') ?? 45.0,
+        "t_crit": double.tryParse(_settings['temp_critical'] ?? '55.0') ?? 55.0,
+        "i_warn": double.tryParse(_settings['current_warning'] ?? '20.0') ?? 20.0,
+        "i_crit": double.tryParse(_settings['current_critical'] ?? '28.0') ?? 28.0,
+      };
+
+      final jsonStr = jsonEncode(payload);
+      await btService.sendCommand(jsonStr);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configuration pushed to ESP32 successfully.'),
+            backgroundColor: AppTheme.statusGood,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to push config: $e'),
+            backgroundColor: AppTheme.statusCritical,
+          ),
+        );
+      }
+    }
+  }
+
   String _getUnit(String key) {
     if (key.contains('volt') || key.contains('voltage')) return 'V';
     if (key.contains('temp')) return '°C';
@@ -99,22 +160,9 @@ class _SettingsViewState extends State<SettingsView> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+
           // ── ESP32 Connection ──
           _SectionHeader(title: 'ESP32 Connection'),
-          _SettingsTile(
-            icon: Icons.wifi,
-            title: 'Connection Mode',
-            subtitle: _settings['connection_mode'] == 'wifi'
-                ? 'WiFi (HTTP)'
-                : 'Bluetooth Classic',
-            onTap: () async {
-              final current = _settings['connection_mode'] ?? 'bluetooth';
-              await _updateSetting(
-                'connection_mode',
-                current == 'wifi' ? 'bluetooth' : 'wifi',
-              );
-            },
-          ),
           _SettingsTile(
             icon: Icons.language,
             title: 'ESP32 IP Address',
@@ -286,61 +334,13 @@ class _SettingsViewState extends State<SettingsView> {
           ),
           const Divider(height: 32),
 
-          // ── Push Settings to ESP32 ──
-          _SectionHeader(title: 'Device Configuration'),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Push the above settings to the connected ESP32 device via Bluetooth.',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Settings push will be available after Bluetooth implementation',
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.upload_rounded),
-                      label: const Text('Push to ESP32'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Calibrate Zero will send CALIBRATE_ZERO command to ESP32',
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.balance),
-                      label: const Text('Calibrate Zero Current'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
+
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _pushToEsp32,
+        icon: const Icon(Icons.bluetooth_connected),
+        label: const Text('Push to ESP32'),
       ),
     );
   }

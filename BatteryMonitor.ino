@@ -64,41 +64,39 @@
 // ─── Sensor Calibration Constants ────────────────────────────
 // Voltage sensor: 25V module with 5:1 divider ratio
 // Adjust VOLTAGE_CALIBRATION after comparing with a multimeter
-const float VOLTAGE_DIVIDER_RATIO = 5.0;
+float VOLTAGE_DIVIDER_RATIO = 5.0;
 float VOLTAGE_CALIBRATION = 1.0; // Fine-tune multiplier
 
 // ACS712 30A: sensitivity = 66 mV/A
 // With external voltage divider (2× 100kΩ) scaling 5V → 2.5V
 // Divider ratio = 100k / (100k + 100k) = 0.5
 // Effective sensitivity at ESP32 pin = 66 * 0.5 = 33 mV/A
-const float ACS712_SENSITIVITY = 66.0;   // mV/A (sensor spec)
-const float CURRENT_DIVIDER_RATIO = 0.5; // R2/(R1+R2) for 2× 100kΩ divider
-const float ACS712_EFF_SENSITIVITY =
-    ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO; // 33 mV/A
+float ACS712_SENSITIVITY = 66.0;   // mV/A (sensor spec)
+float CURRENT_DIVIDER_RATIO = 0.5; // R2/(R1+R2) for 2× 100kΩ divider
 float ACS712_ZERO_OFFSET = 1300.0; // mV at 0A after divider (measured idle)
 // NOTE: Auto-calibrated on startup and saved to flash.
 //       Use CALIBRATE_ZERO BT command to re-calibrate with no load connected.
 
 // ─── Sampling ────────────────────────────────────────────────
-#define ADC_SAMPLES 64 // Number of samples to average
+int ADC_SAMPLES = 64; // Number of samples to average
 
 // ─── Connection Detection ────────────────────────────────────
 // If measured voltage is below this, no battery is connected.
 // ADC noise / residual voltage with nothing connected is typically < 1V.
-#define VOLTAGE_CONNECTED_THRESHOLD 1.0 // Volts
+float VOLTAGE_CONNECTED_THRESHOLD = 1.0; // Volts
 
 // ─── Alert Thresholds (12V Lead-Acid) ────────────────────────
-#define VOLT_CRITICAL_LOW 10.5 // Deeply discharged / damaged
-#define VOLT_WARNING_LOW 11.5  // Low battery
-#define VOLT_NORMAL_LOW 12.0   // Acceptable minimum
-#define VOLT_FULL 12.7         // Fully charged (resting)
-#define VOLT_OVERCHARGE 14.8   // Overcharging
+float VOLT_CRITICAL_LOW = 10.5; // Deeply discharged / damaged
+float VOLT_WARNING_LOW = 11.5;  // Low battery
+float VOLT_NORMAL_LOW = 12.0;   // Acceptable minimum
+float VOLT_FULL = 12.7;         // Fully charged (resting)
+float VOLT_OVERCHARGE = 14.8;   // Overcharging
 
-#define TEMP_WARNING 45.0  // °C — getting hot
-#define TEMP_CRITICAL 55.0 // °C — dangerous
+float TEMP_WARNING = 45.0;  // °C — getting hot
+float TEMP_CRITICAL = 55.0; // °C — dangerous
 
-#define CURRENT_WARNING 20.0  // A — high draw
-#define CURRENT_CRITICAL 28.0 // A — near sensor limit
+float CURRENT_WARNING = 20.0;  // A — high draw
+float CURRENT_CRITICAL = 28.0; // A — near sensor limit
 
 // ─── Alert States ────────────────────────────────────────────
 enum AlertLevel { ALERT_NONE, ALERT_WARNING, ALERT_CRITICAL };
@@ -227,8 +225,23 @@ void setup() {
   wifiPassword = prefs.getString("pass", "12345678");
   prefs.end();
 
+  // Load custom config
   prefs.begin("batt", true);
   batteryCapacity = prefs.getInt("capacity", 100);
+  VOLTAGE_DIVIDER_RATIO = prefs.getFloat("v_div", 5.0);
+  VOLTAGE_CALIBRATION = prefs.getFloat("v_cal", 1.0);
+  ACS712_SENSITIVITY = prefs.getFloat("i_sens", 66.0);
+  CURRENT_DIVIDER_RATIO = prefs.getFloat("i_div", 0.5);
+  ADC_SAMPLES = prefs.getInt("adc_samp", 64);
+  VOLT_CRITICAL_LOW = prefs.getFloat("v_crit_L", 10.5);
+  VOLT_WARNING_LOW = prefs.getFloat("v_warn_L", 11.5);
+  VOLT_NORMAL_LOW = prefs.getFloat("v_norm_L", 12.0);
+  VOLT_FULL = prefs.getFloat("v_full", 12.7);
+  VOLT_OVERCHARGE = prefs.getFloat("v_over", 14.8);
+  TEMP_WARNING = prefs.getFloat("t_warn", 45.0);
+  TEMP_CRITICAL = prefs.getFloat("t_crit", 55.0);
+  CURRENT_WARNING = prefs.getFloat("i_warn", 20.0);
+  CURRENT_CRITICAL = prefs.getFloat("i_crit", 28.0);
   prefs.end();
 
   // ── Current sensor zero-offset calibration ──
@@ -345,7 +358,8 @@ void readSensors() {
   }
   float currentMv = currentSum / (float)ADC_SAMPLES;
   // Current = (measuredMv - zeroOffset) / effectiveSensitivity
-  currentCurrent = (currentMv - ACS712_ZERO_OFFSET) / ACS712_EFF_SENSITIVITY;
+  float effectiveSensitivity = ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO;
+  currentCurrent = (currentMv - ACS712_ZERO_OFFSET) / effectiveSensitivity;
   // Clamp small noise around zero
   if (abs(currentCurrent) < 0.05)
     currentCurrent = 0.0;
@@ -879,10 +893,52 @@ void processBluetoothCommand(String cmd) {
       Serial.printf("Capacity saved: %d Ah\n", batteryCapacity);
     }
   }
+  // ── JSON CONFIG ──
+  else if (cmd.startsWith("{")) {
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, cmd);
+    if (!error && doc["cmd"] == "config") {
+      // WiFi
+      if (doc.containsKey("ssid")) wifiSSID = doc["ssid"].as<String>();
+      if (doc.containsKey("pass")) wifiPassword = doc["pass"].as<String>();
+
+      prefs.begin("wifi", false);
+      prefs.putString("ssid", wifiSSID);
+      prefs.putString("pass", wifiPassword);
+      prefs.end();
+
+      // Battery & Sensor config
+      prefs.begin("batt", false);
+      if (doc.containsKey("v_div")) { VOLTAGE_DIVIDER_RATIO = doc["v_div"]; prefs.putFloat("v_div", VOLTAGE_DIVIDER_RATIO); }
+      if (doc.containsKey("v_cal")) { VOLTAGE_CALIBRATION = doc["v_cal"]; prefs.putFloat("v_cal", VOLTAGE_CALIBRATION); }
+      if (doc.containsKey("i_sens")) { ACS712_SENSITIVITY = doc["i_sens"]; prefs.putFloat("i_sens", ACS712_SENSITIVITY); }
+      if (doc.containsKey("i_div")) { CURRENT_DIVIDER_RATIO = doc["i_div"]; prefs.putFloat("i_div", CURRENT_DIVIDER_RATIO); }
+      if (doc.containsKey("adc_samp")) { ADC_SAMPLES = doc["adc_samp"]; prefs.putInt("adc_samp", ADC_SAMPLES); }
+      if (doc.containsKey("cap")) { batteryCapacity = doc["cap"]; prefs.putInt("capacity", batteryCapacity); }
+
+      if (doc.containsKey("v_crit_L")) { VOLT_CRITICAL_LOW = doc["v_crit_L"]; prefs.putFloat("v_crit_L", VOLT_CRITICAL_LOW); }
+      if (doc.containsKey("v_warn_L")) { VOLT_WARNING_LOW = doc["v_warn_L"]; prefs.putFloat("v_warn_L", VOLT_WARNING_LOW); }
+      if (doc.containsKey("v_norm_L")) { VOLT_NORMAL_LOW = doc["v_norm_L"]; prefs.putFloat("v_norm_L", VOLT_NORMAL_LOW); }
+      if (doc.containsKey("v_full")) { VOLT_FULL = doc["v_full"]; prefs.putFloat("v_full", VOLT_FULL); }
+      if (doc.containsKey("v_over")) { VOLT_OVERCHARGE = doc["v_over"]; prefs.putFloat("v_over", VOLT_OVERCHARGE); }
+
+      if (doc.containsKey("t_warn")) { TEMP_WARNING = doc["t_warn"]; prefs.putFloat("t_warn", TEMP_WARNING); }
+      if (doc.containsKey("t_crit")) { TEMP_CRITICAL = doc["t_crit"]; prefs.putFloat("t_crit", TEMP_CRITICAL); }
+
+      if (doc.containsKey("i_warn")) { CURRENT_WARNING = doc["i_warn"]; prefs.putFloat("i_warn", CURRENT_WARNING); }
+      if (doc.containsKey("i_crit")) { CURRENT_CRITICAL = doc["i_crit"]; prefs.putFloat("i_crit", CURRENT_CRITICAL); }
+      prefs.end();
+
+      SerialBT.println("{\"cmd\":\"config\",\"status\":\"saved\"}");
+      Serial.println("JSON config saved! Restarting ESP32...");
+      delay(500);
+      ESP.restart();
+    }
+  }
   // ── Unknown command ──
   else {
     SerialBT.println("{\"cmd\":\"UNKNOWN\",\"msg\":\"Commands: WIFI_SET, "
-                     "WIFI_STATUS, WIFI_CLEAR, READ, PING, CALIBRATE_ZERO\"}");
+                     "WIFI_STATUS, WIFI_CLEAR, READ, PING, CALIBRATE_ZERO or JSON config\"}");
   }
 }
 

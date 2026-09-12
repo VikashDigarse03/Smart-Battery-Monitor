@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/theme.dart';
 import '../../../../data/repositories/battery_repository.dart';
 import '../../../../data/repositories/measurement_repository.dart';
 import '../../../../data/repositories/location_repository.dart';
+import '../../../core/theme.dart';
+import '../widgets/connection_dialog.dart';
 import '../view_models/dashboard_view_model.dart';
-import 'package:go_router/go_router.dart';
 
 /// Main dashboard — overview of the battery monitoring system.
 class DashboardView extends StatefulWidget {
@@ -61,9 +62,6 @@ class _DashboardViewState extends State<DashboardView> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // ── Summary Cards ──
-                _buildSummaryGrid(),
-                const SizedBox(height: 20),
 
                 // ── Quick Actions ──
                 _buildQuickActions(),
@@ -81,49 +79,25 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
-  Widget _buildSummaryGrid() {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.6,
-      children: [
-        _SummaryCard(
-          title: 'Total Batteries',
-          value: '${_viewModel.totalBatteries}',
-          icon: Icons.battery_full_rounded,
-          color: AppTheme.primary,
-        ),
-        _SummaryCard(
-          title: 'Measured Today',
-          value: '${_viewModel.measuredToday}',
-          icon: Icons.speed_rounded,
-          color: AppTheme.statusInfo,
-        ),
-      ],
-    );
-  }
 
   Widget _buildQuickActions() {
     return Row(
       children: [
         Expanded(
           child: _ActionButton(
-            icon: Icons.qr_code_scanner_rounded,
-            label: 'Scan Battery',
+            icon: Icons.bluetooth_connected,
+            label: 'Connect Bluetooth',
             color: AppTheme.primary,
-            onTap: () => context.pushNamed('scan-battery'),
+            onTap: () => Esp32ConnectionDialog.show(context, mode: 'bluetooth'),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _ActionButton(
-            icon: Icons.add_circle_outline,
-            label: 'Add Battery',
+            icon: Icons.wifi,
+            label: 'Connect WiFi',
             color: AppTheme.secondary,
-            onTap: () => context.pushNamed('add-battery'),
+            onTap: () => Esp32ConnectionDialog.show(context, mode: 'wifi'),
           ),
         ),
         const SizedBox(width: 12),
@@ -197,59 +171,6 @@ class _DashboardViewState extends State<DashboardView> {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _SummaryCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(icon, color: color, size: 24),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _ActionButton extends StatelessWidget {
   final IconData icon;
