@@ -65,7 +65,9 @@
 // Voltage sensor: 25V module with 5:1 divider ratio
 // Adjust VOLTAGE_CALIBRATION after comparing with a multimeter
 float VOLTAGE_DIVIDER_RATIO = 5.0;
-float VOLTAGE_CALIBRATION = 1.0; // Fine-tune multiplier
+float VOLTAGE_CALIBRATION = 1.0;  // Fine-tune multiplier
+float VOLTAGE_ZERO_OFFSET = 0.0;  // Volts to subtract (idle reading with no battery)
+float TEMP_ZERO_OFFSET = 0.0;     // °C to subtract (if sensor reads high)
 
 // ACS712 30A: sensitivity = 66 mV/A
 // With external voltage divider (2× 100kΩ) scaling 5V → 2.5V
@@ -82,8 +84,9 @@ int ADC_SAMPLES = 64; // Number of samples to average
 
 // ─── Connection Detection ────────────────────────────────────
 // If measured voltage is below this, no battery is connected.
-// ADC noise / residual voltage with nothing connected is typically < 1V.
-float VOLTAGE_CONNECTED_THRESHOLD = 1.0; // Volts
+// Set very low (0.15V) so damaged batteries with residual voltage are still detected.
+// ADC noise with nothing connected is typically < 0.1V.
+float VOLTAGE_CONNECTED_THRESHOLD = 0.15; // Volts
 
 // ─── Alert Thresholds (12V Lead-Acid) ────────────────────────
 float VOLT_CRITICAL_LOW = 10.5; // Deeply discharged / damaged
@@ -233,6 +236,9 @@ void setup() {
   ACS712_SENSITIVITY = prefs.getFloat("i_sens", 66.0);
   CURRENT_DIVIDER_RATIO = prefs.getFloat("i_div", 0.5);
   ADC_SAMPLES = prefs.getInt("adc_samp", 64);
+  VOLTAGE_CONNECTED_THRESHOLD = prefs.getFloat("v_conn", 0.15);
+  VOLTAGE_ZERO_OFFSET = prefs.getFloat("v_zero", 0.0);
+  TEMP_ZERO_OFFSET = prefs.getFloat("t_zero", 0.0);
   VOLT_CRITICAL_LOW = prefs.getFloat("v_crit_L", 10.5);
   VOLT_WARNING_LOW = prefs.getFloat("v_warn_L", 11.5);
   VOLT_NORMAL_LOW = prefs.getFloat("v_norm_L", 12.0);
@@ -324,13 +330,18 @@ void readSensors() {
   float rawVoltage =
       (voltageMv / 1000.0) * VOLTAGE_DIVIDER_RATIO * VOLTAGE_CALIBRATION;
 
+  // Apply voltage zero-offset (subtract idle noise)
+  rawVoltage -= VOLTAGE_ZERO_OFFSET;
+  if (rawVoltage < 0.0) rawVoltage = 0.0;
+
   // DEBUG: Print raw ADC values every 2 seconds
   static unsigned long lastDebug = 0;
   if (millis() - lastDebug >= 2000) {
     lastDebug = millis();
     Serial.printf(
-        "[DEBUG] Voltage pin raw: %.1f mV → %.2f V | Current pin raw: %ld mV\n",
-        voltageMv, rawVoltage, analogReadMilliVolts(CURRENT_PIN));
+        "[DEBUG] ADC raw: %.1f mV | Computed: %.3f V | Threshold: %.3f V | %s\n",
+        voltageMv, rawVoltage, VOLTAGE_CONNECTED_THRESHOLD,
+        rawVoltage >= VOLTAGE_CONNECTED_THRESHOLD ? "CONNECTED" : "NOT CONNECTED");
   }
 
   // --- Connection Detection ---
@@ -368,7 +379,7 @@ void readSensors() {
   tempSensor.requestTemperatures();
   float tempC = tempSensor.getTempCByIndex(0);
   if (tempC != DEVICE_DISCONNECTED_C) {
-    currentTemperature = tempC;
+    currentTemperature = tempC - TEMP_ZERO_OFFSET;
   }
   // If disconnected, keep last known value
 
@@ -407,19 +418,31 @@ void readSensors() {
 }
 
 // =============================================================
-//  BATTERY PERCENTAGE (12V Lead-Acid Lookup)
+//  BATTERY PERCENTAGE (Dynamic — uses configured thresholds)
 // =============================================================
 int voltageToPercent(float voltage) {
-  if (voltage >= 12.70)
+  // Uses the configurable thresholds so it works for any battery type:
+  // 3.7V Li-ion, 12V Lead-Acid, 24V, etc.
+  //
+  // Mapping:
+  //   >= VOLT_FULL       → 100%
+  //   VOLT_NORMAL_LOW    →  75%  (between NORMAL_LOW and FULL)
+  //   VOLT_WARNING_LOW   →  50%  (between WARNING_LOW and NORMAL_LOW)
+  //   VOLT_CRITICAL_LOW  →  25%  (between CRITICAL_LOW and WARNING_LOW)
+  //   below CRITICAL_LOW →   0%  (damaged / deeply discharged)
+
+  if (voltage >= VOLT_FULL)
     return 100;
-  if (voltage >= 12.40)
-    return map(voltage * 100, 1240, 1270, 75, 100);
-  if (voltage >= 12.20)
-    return map(voltage * 100, 1220, 1240, 50, 75);
-  if (voltage >= 12.00)
-    return map(voltage * 100, 1200, 1220, 25, 50);
-  if (voltage >= 11.80)
-    return map(voltage * 100, 1180, 1200, 0, 25);
+  if (voltage >= VOLT_NORMAL_LOW)
+    return map(voltage * 100, (long)(VOLT_NORMAL_LOW * 100), (long)(VOLT_FULL * 100), 75, 100);
+  if (voltage >= VOLT_WARNING_LOW)
+    return map(voltage * 100, (long)(VOLT_WARNING_LOW * 100), (long)(VOLT_NORMAL_LOW * 100), 50, 75);
+  if (voltage >= VOLT_CRITICAL_LOW)
+    return map(voltage * 100, (long)(VOLT_CRITICAL_LOW * 100), (long)(VOLT_WARNING_LOW * 100), 25, 50);
+  // Below critical — battery is deeply discharged or damaged
+  // Still show a proportional value down to 0%
+  if (voltage > 0.0)
+    return map(voltage * 100, 0, (long)(VOLT_CRITICAL_LOW * 100), 0, 25);
   return 0;
 }
 
@@ -879,6 +902,25 @@ void processBluetoothCommand(String cmd) {
     Serial.printf("ACS712 zero offset calibrated & saved: %.1f mV\n",
                   ACS712_ZERO_OFFSET);
   }
+  // ── CALIBRATE_VOLTAGE_ZERO ──
+  // Use with NO BATTERY connected to zero out idle ADC noise on voltage pin
+  else if (cmd == "CALIBRATE_VOLTAGE_ZERO") {
+    long sum = 0;
+    for (int i = 0; i < 200; i++) {
+      sum += analogReadMilliVolts(VOLTAGE_PIN);
+      delay(5);
+    }
+    float idleMv = sum / 200.0;
+    VOLTAGE_ZERO_OFFSET = (idleMv / 1000.0) * VOLTAGE_DIVIDER_RATIO * VOLTAGE_CALIBRATION;
+    // Save to flash
+    prefs.begin("batt", false);
+    prefs.putFloat("v_zero", VOLTAGE_ZERO_OFFSET);
+    prefs.end();
+    SerialBT.println("{\"cmd\":\"CALIBRATE_VOLTAGE_ZERO\",\"offset_v\":" +
+                     String(VOLTAGE_ZERO_OFFSET, 3) + "}");
+    Serial.printf("Voltage zero offset calibrated & saved: %.3f V\n",
+                  VOLTAGE_ZERO_OFFSET);
+  }
   // ── CAPACITY_SET ──
   else if (cmd.startsWith("CAPACITY_SET:")) {
     int newCap = cmd.substring(13).toInt();
@@ -916,12 +958,15 @@ void processBluetoothCommand(String cmd) {
       if (doc.containsKey("adc_samp")) { ADC_SAMPLES = doc["adc_samp"]; prefs.putInt("adc_samp", ADC_SAMPLES); }
       if (doc.containsKey("cap")) { batteryCapacity = doc["cap"]; prefs.putInt("capacity", batteryCapacity); }
 
+      if (doc.containsKey("v_conn")) { VOLTAGE_CONNECTED_THRESHOLD = doc["v_conn"]; prefs.putFloat("v_conn", VOLTAGE_CONNECTED_THRESHOLD); }
+      if (doc.containsKey("v_zero")) { VOLTAGE_ZERO_OFFSET = doc["v_zero"]; prefs.putFloat("v_zero", VOLTAGE_ZERO_OFFSET); }
       if (doc.containsKey("v_crit_L")) { VOLT_CRITICAL_LOW = doc["v_crit_L"]; prefs.putFloat("v_crit_L", VOLT_CRITICAL_LOW); }
       if (doc.containsKey("v_warn_L")) { VOLT_WARNING_LOW = doc["v_warn_L"]; prefs.putFloat("v_warn_L", VOLT_WARNING_LOW); }
       if (doc.containsKey("v_norm_L")) { VOLT_NORMAL_LOW = doc["v_norm_L"]; prefs.putFloat("v_norm_L", VOLT_NORMAL_LOW); }
       if (doc.containsKey("v_full")) { VOLT_FULL = doc["v_full"]; prefs.putFloat("v_full", VOLT_FULL); }
       if (doc.containsKey("v_over")) { VOLT_OVERCHARGE = doc["v_over"]; prefs.putFloat("v_over", VOLT_OVERCHARGE); }
 
+      if (doc.containsKey("t_zero")) { TEMP_ZERO_OFFSET = doc["t_zero"]; prefs.putFloat("t_zero", TEMP_ZERO_OFFSET); }
       if (doc.containsKey("t_warn")) { TEMP_WARNING = doc["t_warn"]; prefs.putFloat("t_warn", TEMP_WARNING); }
       if (doc.containsKey("t_crit")) { TEMP_CRITICAL = doc["t_crit"]; prefs.putFloat("t_crit", TEMP_CRITICAL); }
 

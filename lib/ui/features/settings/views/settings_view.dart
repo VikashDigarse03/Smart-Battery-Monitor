@@ -98,6 +98,8 @@ class _SettingsViewState extends State<SettingsView> {
         "pass": _settings['esp32_wifi_password'] ?? "",
         "v_div": double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
         "v_cal": double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
+        "v_zero": double.tryParse(_settings['voltage_zero_offset'] ?? '0.0') ?? 0.0,
+        "v_conn": double.tryParse(_settings['voltage_conn_threshold'] ?? '0.15') ?? 0.15,
         "i_div": double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
         "i_sens": double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
         "i_zero": double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ?? 1300.0,
@@ -108,6 +110,7 @@ class _SettingsViewState extends State<SettingsView> {
         "v_norm_L": double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
         "v_full": double.tryParse(_settings['volt_full'] ?? '12.7') ?? 12.7,
         "v_over": double.tryParse(_settings['volt_overcharge'] ?? '14.8') ?? 14.8,
+        "t_zero": double.tryParse(_settings['temp_zero_offset'] ?? '0.0') ?? 0.0,
         "t_warn": double.tryParse(_settings['temp_warning'] ?? '45.0') ?? 45.0,
         "t_crit": double.tryParse(_settings['temp_critical'] ?? '55.0') ?? 55.0,
         "i_warn": double.tryParse(_settings['current_warning'] ?? '20.0') ?? 20.0,
@@ -139,12 +142,73 @@ class _SettingsViewState extends State<SettingsView> {
 
   String _getUnit(String key) {
     if (key.contains('volt') || key.contains('voltage')) return 'V';
+    if (key.contains('threshold')) return 'V';
     if (key.contains('temp')) return '°C';
     if (key.contains('current')) return 'A';
     if (key.contains('sensitivity')) return 'mV/A';
-    if (key.contains('offset')) return 'mV';
+    if (key.contains('offset') && key.contains('acs')) return 'mV';
+    if (key.contains('offset')) return 'V';
     if (key.contains('capacity')) return 'Ah';
     return '';
+  }
+
+  Future<void> _autoCalibVoltageZero() async {
+    final btService = context.read<Esp32BluetoothService>();
+    if (!btService.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please connect to ESP32 via Bluetooth first.'),
+          backgroundColor: AppTheme.statusWarning,
+        ),
+      );
+      return;
+    }
+
+    // Confirm with user
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Auto-Calibrate Voltage Zero'),
+        content: const Text(
+          'Make sure NO BATTERY is connected to the sensor.\n\n'
+          'The ESP32 will sample the idle voltage and set it as the zero offset '
+          'so that the reading shows 0V when nothing is connected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Calibrate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await btService.sendCommand('CALIBRATE_VOLTAGE_ZERO');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voltage zero calibration sent! Check ESP32 response.'),
+            backgroundColor: AppTheme.statusGood,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Calibration failed: \$e'),
+            backgroundColor: AppTheme.statusCritical,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -236,6 +300,22 @@ class _SettingsViewState extends State<SettingsView> {
           // ── Temperature Thresholds ──
           _SectionHeader(title: 'Temperature Thresholds'),
           _SettingsTile(
+            icon: Icons.thermostat_auto,
+            title: 'Temperature Offset',
+            subtitle: '${_settings['temp_zero_offset'] ?? '0.0'} °C',
+            onTap: () => _showEditDialog(
+              'Temperature Offset (°C to subtract)',
+              'temp_zero_offset',
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 4),
+            child: Text(
+              'If sensor reads 3°C higher than actual, set offset to 3.0',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+            ),
+          ),
+          _SettingsTile(
             icon: Icons.thermostat,
             title: 'Warning',
             subtitle: '${_settings['temp_warning'] ?? '45.0'} °C',
@@ -266,6 +346,53 @@ class _SettingsViewState extends State<SettingsView> {
             subtitle: '${_settings['current_critical'] ?? '28.0'} A',
             onTap: () =>
                 _showEditDialog('Current Critical', 'current_critical'),
+          ),
+          const Divider(height: 32),
+
+          // ── Voltage Zero Offset / Calibration ──
+          _SectionHeader(title: 'Voltage Zero Offset'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Subtract idle ADC noise so voltage reads 0V when no battery is connected. '
+              'Current offset: ${_settings['voltage_zero_offset'] ?? '0.0'} V',
+              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+            ),
+          ),
+          _SettingsTile(
+            icon: Icons.straighten,
+            title: 'Voltage Zero Offset',
+            subtitle: '${_settings['voltage_zero_offset'] ?? '0.0'} V',
+            onTap: () => _showEditDialog(
+              'Voltage Zero Offset (V)',
+              'voltage_zero_offset',
+            ),
+          ),
+          _SettingsTile(
+            icon: Icons.filter_center_focus,
+            title: 'Connection Threshold',
+            subtitle: '${_settings['voltage_conn_threshold'] ?? '0.15'} V',
+            onTap: () => _showEditDialog(
+              'Min Voltage to Detect Battery (V)',
+              'voltage_conn_threshold',
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.only(bottom: 4),
+            color: AppTheme.primary.withOpacity(0.15),
+            child: ListTile(
+              leading: const Icon(Icons.auto_fix_high, color: AppTheme.primary, size: 20),
+              title: const Text(
+                'Auto-Calibrate Voltage Zero',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Disconnect battery first, then tap to zero out idle noise',
+                style: TextStyle(fontSize: 11),
+              ),
+              trailing: const Icon(Icons.play_arrow, color: AppTheme.primary),
+              onTap: _autoCalibVoltageZero,
+            ),
           ),
           const Divider(height: 32),
 
