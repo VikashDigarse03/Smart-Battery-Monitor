@@ -11,7 +11,11 @@ class LocationRepository {
 
   Future<List<Room>> getAllRooms() async {
     final db = await _db.database;
-    final results = await db.query('rooms', orderBy: 'name ASC');
+    final results = await db.query(
+      'rooms',
+      where: 'is_archived = 0 OR is_archived IS NULL',
+      orderBy: 'name ASC',
+    );
     return results.map(_mapRowToRoom).toList();
   }
 
@@ -50,6 +54,45 @@ class LocationRepository {
   Future<void> deleteRoom(int id) async {
     final db = await _db.database;
     await db.delete('rooms', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Archive a room (soft-delete). Archived rooms can be retrieved later.
+  Future<void> archiveRoom(int id) async {
+    final db = await _db.database;
+    await db.update(
+      'rooms',
+      {
+        'is_archived': 1,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Restore an archived room.
+  Future<void> unarchiveRoom(int id) async {
+    final db = await _db.database;
+    await db.update(
+      'rooms',
+      {
+        'is_archived': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Get all archived rooms.
+  Future<List<Room>> getArchivedRooms() async {
+    final db = await _db.database;
+    final results = await db.query(
+      'rooms',
+      where: 'is_archived = 1',
+      orderBy: 'name ASC',
+    );
+    return results.map(_mapRowToRoom).toList();
   }
 
   // ─── Racks ──────────────────────────────────────────────────
@@ -204,6 +247,7 @@ class LocationRepository {
       id: row['id'] as int?,
       name: row['name'] as String,
       description: row['description'] as String?,
+      isArchived: (row['is_archived'] as int?) == 1,
       createdAt: DateTime.parse(row['created_at'] as String),
       updatedAt: DateTime.parse(row['updated_at'] as String),
     );

@@ -109,12 +109,75 @@ class _RoomDetailViewState extends State<RoomDetailView> {
     }
   }
 
+  Future<void> _renameRoom() async {
+    if (_room == null) return;
+    final nameController = TextEditingController(text: _room!.name);
+    final descController = TextEditingController(text: _room!.description ?? '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Room'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Room Name'),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && nameController.text.isNotEmpty) {
+      final repo = context.read<LocationRepository>();
+      await repo.updateRoom(
+        _room!.id!,
+        nameController.text.trim(),
+        description: descController.text.trim().isEmpty
+            ? null
+            : descController.text.trim(),
+      );
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Room renamed successfully'),
+            backgroundColor: AppTheme.statusGood,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_room?.name ?? 'Room'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Rename Room',
+            onPressed: _renameRoom,
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add Rack',

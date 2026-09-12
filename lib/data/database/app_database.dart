@@ -25,7 +25,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 2, // Upgraded to v2 to support rack-level specs
+      version: 3, // Upgraded to v3: soft-delete rooms
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -35,17 +35,14 @@ class AppDatabase {
   }
   
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Since this is pre-production, simply wipe and recreate.
-    await db.execute('DROP TABLE IF EXISTS app_settings');
-    await db.execute('DROP TABLE IF EXISTS battery_events');
-    await db.execute('DROP TABLE IF EXISTS measurements');
-    await db.execute('DROP TABLE IF EXISTS battery_assignments');
-    await db.execute('DROP TABLE IF EXISTS batteries');
-    await db.execute('DROP TABLE IF EXISTS rack_positions');
-    await db.execute('DROP TABLE IF EXISTS racks');
-    await db.execute('DROP TABLE IF EXISTS rooms');
-    await db.execute('DROP TABLE IF EXISTS devices');
-    await _onCreate(db, newVersion);
+    if (oldVersion < 3) {
+      // Add is_archived column to rooms if upgrading from v2
+      try {
+        await db.execute('ALTER TABLE rooms ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {
+        // Column may already exist
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -55,6 +52,7 @@ class AppDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
+        is_archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

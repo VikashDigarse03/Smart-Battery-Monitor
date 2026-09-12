@@ -125,6 +125,20 @@ class BatteryRepository {
     return _mapRowToBattery(results.first);
   }
 
+  /// Update battery display name (battery_id).
+  Future<void> updateBatteryName(int id, String newBatteryId) async {
+    final db = await _db.database;
+    await db.update(
+      'batteries',
+      {
+        'battery_id': newBatteryId,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// Update battery status.
   Future<void> updateBatteryStatus(int id, BatteryStatus status) async {
     final db = await _db.database;

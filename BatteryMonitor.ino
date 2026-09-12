@@ -940,14 +940,23 @@ void processBluetoothCommand(String cmd) {
     StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, cmd);
     if (!error && doc["cmd"] == "config") {
+      bool wifiChanged = false;
       // WiFi
-      if (doc.containsKey("ssid")) wifiSSID = doc["ssid"].as<String>();
-      if (doc.containsKey("pass")) wifiPassword = doc["pass"].as<String>();
+      if (doc.containsKey("ssid")) {
+        wifiSSID = doc["ssid"].as<String>();
+        wifiChanged = true;
+      }
+      if (doc.containsKey("pass")) {
+        wifiPassword = doc["pass"].as<String>();
+        wifiChanged = true;
+      }
 
-      prefs.begin("wifi", false);
-      prefs.putString("ssid", wifiSSID);
-      prefs.putString("pass", wifiPassword);
-      prefs.end();
+      if (wifiChanged) {
+        prefs.begin("wifi", false);
+        prefs.putString("ssid", wifiSSID);
+        prefs.putString("pass", wifiPassword);
+        prefs.end();
+      }
 
       // Battery & Sensor config
       prefs.begin("batt", false);
@@ -975,9 +984,13 @@ void processBluetoothCommand(String cmd) {
       prefs.end();
 
       SerialBT.println("{\"cmd\":\"config\",\"status\":\"saved\"}");
-      Serial.println("JSON config saved! Restarting ESP32...");
-      delay(500);
-      ESP.restart();
+      Serial.println("JSON config saved! Live updating parameters...");
+      
+      // If WiFi changed, try to restart AP
+      if (wifiChanged) {
+        WiFi.softAPdisconnect();
+        connectWiFi();
+      }
     }
   }
   // ── Unknown command ──
