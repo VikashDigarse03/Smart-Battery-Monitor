@@ -77,7 +77,6 @@ float ACS712_SENSITIVITY = 66.0;   // mV/A (sensor spec)
 float CURRENT_DIVIDER_RATIO = 0.5; // R2/(R1+R2) for 2× 100kΩ divider
 float ACS712_ZERO_OFFSET = 1300.0; // mV at 0A after divider (measured idle)
 // NOTE: Auto-calibrated on startup and saved to flash.
-//       Use CALIBRATE_ZERO BT command to re-calibrate with no load connected.
 
 // ─── Sampling ────────────────────────────────────────────────
 int ADC_SAMPLES = 64; // Number of samples to average
@@ -250,17 +249,30 @@ void setup() {
   CURRENT_CRITICAL = prefs.getFloat("i_crit", 28.0);
   prefs.end();
 
+  // Safeguard against accidentally saved zero values breaking the device
+  if (VOLTAGE_DIVIDER_RATIO <= 0.01) VOLTAGE_DIVIDER_RATIO = 5.0;
+  if (VOLTAGE_CALIBRATION <= 0.01) VOLTAGE_CALIBRATION = 1.0;
+  if (ACS712_SENSITIVITY <= 0.01) ACS712_SENSITIVITY = 66.0;
+  if (CURRENT_DIVIDER_RATIO <= 0.01) CURRENT_DIVIDER_RATIO = 0.5;
+  if (ADC_SAMPLES < 1) ADC_SAMPLES = 64;
+  if (batteryCapacity < 1) batteryCapacity = 100;
+
+  ACS712_EFF_SENSITIVITY = ACS712_SENSITIVITY * CURRENT_DIVIDER_RATIO;
+
   // ── Current sensor zero-offset calibration ──
-  // Auto-calibrate every boot by sampling the current pin.
-  // Assumes no load is flowing through ACS712 at power-on.
-  Serial.println("  Auto-calibrating current sensor...");
-  long calSum = 0;
-  for (int i = 0; i < 200; i++) {
-    calSum += analogReadMilliVolts(CURRENT_PIN);
-    delay(5);
+  if (savedZeroOff > 0) {
+    ACS712_ZERO_OFFSET = savedZeroOff;
+    Serial.printf("  Loaded ACS712 zero offset from flash: %.1f mV\n", ACS712_ZERO_OFFSET);
+  } else {
+    Serial.println("  Auto-calibrating current sensor...");
+    long calSum = 0;
+    for (int i = 0; i < 200; i++) {
+      calSum += analogReadMilliVolts(CURRENT_PIN);
+      delay(5);
+    }
+    ACS712_ZERO_OFFSET = calSum / 200.0;
+    Serial.printf("  ACS712 zero offset: %.1f mV\n", ACS712_ZERO_OFFSET);
   }
-  ACS712_ZERO_OFFSET = calSum / 200.0;
-  Serial.printf("  ACS712 zero offset: %.1f mV\n", ACS712_ZERO_OFFSET);
 
   // Start the WiFi Access Point
   connectWiFi();
@@ -1004,14 +1016,21 @@ void sendBluetoothData() {
   if (!SerialBT.hasClient())
     return;
 
-  StaticJsonDocument<384> doc;
+  // Sanitize values to prevent NaN which breaks JSON parsing in Flutter
+  float v = isnan(currentVoltage) ? 0.0 : round2(currentVoltage);
+  float i = isnan(currentCurrent) ? 0.0 : round2(currentCurrent);
+  float t = isnan(currentTemperature) ? 0.0 : round1(currentTemperature);
+  float p = isnan(currentPower) ? 0.0 : round2(currentPower);
+  float l = isnan(timeLeft) ? 0.0 : round2(timeLeft);
+
+  StaticJsonDocument<512> doc;
   doc["connected"] = batteryConnected;
-  doc["v"] = round2(currentVoltage);
-  doc["i"] = round2(currentCurrent);
-  doc["t"] = round1(currentTemperature);
-  doc["p"] = round2(currentPower);
+  doc["v"] = v;
+  doc["i"] = i;
+  doc["t"] = t;
+  doc["p"] = p;
   doc["pct"] = batteryPercent;
-  doc["time_left"] = round2(timeLeft);
+  doc["time_left"] = l;
   doc["health"] = batteryHealth;
   doc["capacity"] = batteryCapacity;
   doc["ts"] = millis();

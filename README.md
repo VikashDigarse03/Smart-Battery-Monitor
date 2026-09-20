@@ -24,7 +24,7 @@ A Flutter application designed to monitor battery health, voltage, current, and 
 
 1. Clone the repository:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/VikashDigarse03/Smart-Battery-Monitor
    ```
 2. Navigate to the project directory:
    ```bash

@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_bluetooth_serial_plus/flutter_bluetooth_serial_plus.dart';
@@ -91,7 +92,9 @@ class _SettingsViewState extends State<SettingsView> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Bluetooth Connected'),
-          content: const Text('You are connected to ESP32.\nDo you want to disconnect?'),
+          content: const Text(
+            'You are connected to ESP32.\nDo you want to disconnect?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -99,7 +102,9 @@ class _SettingsViewState extends State<SettingsView> {
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.statusCritical),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.statusCritical,
+              ),
               child: const Text('Disconnect'),
             ),
           ],
@@ -123,7 +128,9 @@ class _SettingsViewState extends State<SettingsView> {
       if (devices.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No paired Bluetooth devices found. Pair your ESP32 in system Bluetooth settings first.'),
+            content: Text(
+              'No paired Bluetooth devices found. Pair your ESP32 in system Bluetooth settings first.',
+            ),
             backgroundColor: AppTheme.statusWarning,
           ),
         );
@@ -166,10 +173,14 @@ class _SettingsViewState extends State<SettingsView> {
           setState(() => _isConnecting = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(success
-                  ? 'Connected to ${selected.name ?? selected.address}'
-                  : 'Failed to connect to ${selected.name ?? selected.address}'),
-              backgroundColor: success ? AppTheme.statusGood : AppTheme.statusCritical,
+              content: Text(
+                success
+                    ? 'Connected to ${selected.name ?? selected.address}'
+                    : 'Failed to connect to ${selected.name ?? selected.address}',
+              ),
+              backgroundColor: success
+                  ? AppTheme.statusGood
+                  : AppTheme.statusCritical,
             ),
           );
         }
@@ -189,12 +200,17 @@ class _SettingsViewState extends State<SettingsView> {
 
   // ─── Send Partial Config Sections ──────────────────────────
 
-  Future<void> _sendSectionToEsp32(String sectionName, Map<String, dynamic> payload) async {
+  Future<void> _sendSectionToEsp32(
+    String sectionName,
+    Map<String, dynamic> payload,
+  ) async {
     final btService = context.read<Esp32BluetoothService>();
     if (!btService.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.'),
+          content: Text(
+            'Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.',
+          ),
           backgroundColor: AppTheme.statusWarning,
         ),
       );
@@ -235,9 +251,12 @@ class _SettingsViewState extends State<SettingsView> {
 
   void _sendVoltageThresholds() {
     _sendSectionToEsp32('Voltage Thresholds', {
-      'v_crit_L': double.tryParse(_settings['volt_critical_low'] ?? '10.5') ?? 10.5,
-      'v_warn_L': double.tryParse(_settings['volt_warning_low'] ?? '11.5') ?? 11.5,
-      'v_norm_L': double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
+      'v_crit_L':
+          double.tryParse(_settings['volt_critical_low'] ?? '10.5') ?? 10.5,
+      'v_warn_L':
+          double.tryParse(_settings['volt_warning_low'] ?? '11.5') ?? 11.5,
+      'v_norm_L':
+          double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
       'v_full': double.tryParse(_settings['volt_full'] ?? '12.7') ?? 12.7,
       'v_over': double.tryParse(_settings['volt_overcharge'] ?? '14.8') ?? 14.8,
     });
@@ -254,24 +273,34 @@ class _SettingsViewState extends State<SettingsView> {
   void _sendCurrentThresholds() {
     _sendSectionToEsp32('Current Thresholds', {
       'i_warn': double.tryParse(_settings['current_warning'] ?? '20.0') ?? 20.0,
-      'i_crit': double.tryParse(_settings['current_critical'] ?? '28.0') ?? 28.0,
+      'i_crit':
+          double.tryParse(_settings['current_critical'] ?? '28.0') ?? 28.0,
     });
   }
 
   void _sendVoltageZeroOffset() {
     _sendSectionToEsp32('Voltage Zero Offset', {
-      'v_zero': double.tryParse(_settings['voltage_zero_offset'] ?? '0.0') ?? 0.0,
-      'v_conn': double.tryParse(_settings['voltage_conn_threshold'] ?? '0.15') ?? 0.15,
+      'v_zero':
+          double.tryParse(_settings['voltage_zero_offset'] ?? '0.0') ?? 0.0,
+      'v_conn':
+          double.tryParse(_settings['voltage_conn_threshold'] ?? '0.15') ??
+          0.15,
     });
   }
 
   void _sendSensorCalibration() {
     _sendSectionToEsp32('Sensor Calibration', {
-      'v_div': double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
-      'v_cal': double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
-      'i_div': double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
-      'i_sens': double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
-      'i_zero': double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ?? 1300.0,
+      'v_div':
+          double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
+      'v_cal':
+          double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
+      'i_div':
+          double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
+      'i_sens':
+          double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
+      'i_zero':
+          double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ??
+          1300.0,
       'adc_samp': int.tryParse(_settings['adc_samples'] ?? '64') ?? 64,
       'cap': int.tryParse(_settings['battery_capacity_ah'] ?? '100') ?? 100,
     });
@@ -284,7 +313,9 @@ class _SettingsViewState extends State<SettingsView> {
     if (!btService.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.'),
+          content: Text(
+            'Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.',
+          ),
           backgroundColor: AppTheme.statusWarning,
         ),
       );
@@ -297,25 +328,41 @@ class _SettingsViewState extends State<SettingsView> {
         "cmd": "config",
         "ssid": _settings['esp32_wifi_ssid'] ?? "",
         "pass": _settings['esp32_wifi_password'] ?? "",
-        "v_div": double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
-        "v_cal": double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
-        "v_zero": double.tryParse(_settings['voltage_zero_offset'] ?? '0.0') ?? 0.0,
-        "v_conn": double.tryParse(_settings['voltage_conn_threshold'] ?? '0.15') ?? 0.15,
-        "i_div": double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
-        "i_sens": double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
-        "i_zero": double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ?? 1300.0,
+        "v_div":
+            double.tryParse(_settings['voltage_divider_ratio'] ?? '5.0') ?? 5.0,
+        "v_cal":
+            double.tryParse(_settings['voltage_calibration'] ?? '1.0') ?? 1.0,
+        "v_zero":
+            double.tryParse(_settings['voltage_zero_offset'] ?? '0.0') ?? 0.0,
+        "v_conn":
+            double.tryParse(_settings['voltage_conn_threshold'] ?? '0.15') ??
+            0.15,
+        "i_div":
+            double.tryParse(_settings['current_divider_ratio'] ?? '0.5') ?? 0.5,
+        "i_sens":
+            double.tryParse(_settings['acs712_sensitivity'] ?? '66.0') ?? 66.0,
+        "i_zero":
+            double.tryParse(_settings['acs712_zero_offset'] ?? '1300.0') ??
+            1300.0,
         "adc_samp": int.tryParse(_settings['adc_samples'] ?? '64') ?? 64,
         "cap": int.tryParse(_settings['battery_capacity_ah'] ?? '100') ?? 100,
-        "v_crit_L": double.tryParse(_settings['volt_critical_low'] ?? '10.5') ?? 10.5,
-        "v_warn_L": double.tryParse(_settings['volt_warning_low'] ?? '11.5') ?? 11.5,
-        "v_norm_L": double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
+        "v_crit_L":
+            double.tryParse(_settings['volt_critical_low'] ?? '10.5') ?? 10.5,
+        "v_warn_L":
+            double.tryParse(_settings['volt_warning_low'] ?? '11.5') ?? 11.5,
+        "v_norm_L":
+            double.tryParse(_settings['volt_normal_low'] ?? '12.0') ?? 12.0,
         "v_full": double.tryParse(_settings['volt_full'] ?? '12.7') ?? 12.7,
-        "v_over": double.tryParse(_settings['volt_overcharge'] ?? '14.8') ?? 14.8,
-        "t_zero": double.tryParse(_settings['temp_zero_offset'] ?? '0.0') ?? 0.0,
+        "v_over":
+            double.tryParse(_settings['volt_overcharge'] ?? '14.8') ?? 14.8,
+        "t_zero":
+            double.tryParse(_settings['temp_zero_offset'] ?? '0.0') ?? 0.0,
         "t_warn": double.tryParse(_settings['temp_warning'] ?? '45.0') ?? 45.0,
         "t_crit": double.tryParse(_settings['temp_critical'] ?? '55.0') ?? 55.0,
-        "i_warn": double.tryParse(_settings['current_warning'] ?? '20.0') ?? 20.0,
-        "i_crit": double.tryParse(_settings['current_critical'] ?? '28.0') ?? 28.0,
+        "i_warn":
+            double.tryParse(_settings['current_warning'] ?? '20.0') ?? 20.0,
+        "i_crit":
+            double.tryParse(_settings['current_critical'] ?? '28.0') ?? 28.0,
       };
 
       final jsonStr = jsonEncode(payload);
@@ -358,7 +405,9 @@ class _SettingsViewState extends State<SettingsView> {
     if (!btService.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.'),
+          content: Text(
+            'Not connected to ESP32. Tap the Bluetooth icon in the app bar to connect.',
+          ),
           backgroundColor: AppTheme.statusWarning,
         ),
       );
@@ -395,7 +444,9 @@ class _SettingsViewState extends State<SettingsView> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Voltage zero calibration sent! Check ESP32 response.'),
+            content: Text(
+              'Voltage zero calibration sent! Check ESP32 response.',
+            ),
             backgroundColor: AppTheme.statusGood,
           ),
         );
@@ -415,9 +466,7 @@ class _SettingsViewState extends State<SettingsView> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final btService = context.read<Esp32BluetoothService>();
@@ -439,10 +488,16 @@ class _SettingsViewState extends State<SettingsView> {
                 )
               : IconButton(
                   icon: Icon(
-                    isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                    color: isConnected ? AppTheme.statusGood : AppTheme.textMuted,
+                    isConnected
+                        ? Icons.bluetooth_connected
+                        : Icons.bluetooth_disabled,
+                    color: isConnected
+                        ? AppTheme.statusGood
+                        : AppTheme.textMuted,
                   ),
-                  tooltip: isConnected ? 'Connected — Tap to manage' : 'Connect to ESP32',
+                  tooltip: isConnected
+                      ? 'Connected — Tap to manage'
+                      : 'Connect to ESP32',
                   onPressed: _showBluetoothDevicePicker,
                 ),
         ],
@@ -458,16 +513,25 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: BoxDecoration(
                 color: AppTheme.statusWarning.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.statusWarning.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppTheme.statusWarning.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.bluetooth_disabled, color: AppTheme.statusWarning, size: 20),
+                  const Icon(
+                    Icons.bluetooth_disabled,
+                    color: AppTheme.statusWarning,
+                    size: 20,
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       'Not connected to ESP32. Tap the Bluetooth icon above to connect.',
-                      style: TextStyle(fontSize: 13, color: AppTheme.statusWarning),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.statusWarning,
+                      ),
                     ),
                   ),
                 ],
@@ -480,16 +544,25 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: BoxDecoration(
                 color: AppTheme.statusGood.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.statusGood.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppTheme.statusGood.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.bluetooth_connected, color: AppTheme.statusGood, size: 20),
+                  const Icon(
+                    Icons.bluetooth_connected,
+                    color: AppTheme.statusGood,
+                    size: 20,
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       'Connected to ESP32 via Bluetooth',
-                      style: TextStyle(fontSize: 13, color: AppTheme.statusGood),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.statusGood,
+                      ),
                     ),
                   ),
                 ],
@@ -497,7 +570,11 @@ class _SettingsViewState extends State<SettingsView> {
             ),
 
           // ── ESP32 Connection ──
-          _SectionHeader(title: 'ESP32 WiFi Config', onSend: _sendEsp32Connection, isConnected: isConnected),
+          _SectionHeader(
+            title: 'ESP32 WiFi Config',
+            onSend: _sendEsp32Connection,
+            isConnected: isConnected,
+          ),
           _SettingsTile(
             icon: Icons.language,
             title: 'ESP32 IP Address',
@@ -531,7 +608,11 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 32),
 
           // ── Voltage Thresholds ──
-          _SectionHeader(title: 'Voltage Thresholds (12V Lead-Acid)', onSend: _sendVoltageThresholds, isConnected: isConnected),
+          _SectionHeader(
+            title: 'Voltage Thresholds (12V Lead-Acid)',
+            onSend: _sendVoltageThresholds,
+            isConnected: isConnected,
+          ),
           _SettingsTile(
             icon: Icons.warning,
             title: 'Critical Low',
@@ -569,7 +650,11 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 32),
 
           // ── Temperature Thresholds ──
-          _SectionHeader(title: 'Temperature Thresholds', onSend: _sendTemperatureThresholds, isConnected: isConnected),
+          _SectionHeader(
+            title: 'Temperature Thresholds',
+            onSend: _sendTemperatureThresholds,
+            isConnected: isConnected,
+          ),
           _SettingsTile(
             icon: Icons.thermostat_auto,
             title: 'Temperature Offset',
@@ -590,8 +675,7 @@ class _SettingsViewState extends State<SettingsView> {
             icon: Icons.thermostat,
             title: 'Warning',
             subtitle: '${_settings['temp_warning'] ?? '45.0'} °C',
-            onTap: () =>
-                _showEditDialog('Temperature Warning', 'temp_warning'),
+            onTap: () => _showEditDialog('Temperature Warning', 'temp_warning'),
           ),
           _SettingsTile(
             icon: Icons.local_fire_department,
@@ -603,13 +687,16 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 32),
 
           // ── Current Thresholds ──
-          _SectionHeader(title: 'Current Thresholds', onSend: _sendCurrentThresholds, isConnected: isConnected),
+          _SectionHeader(
+            title: 'Current Thresholds',
+            onSend: _sendCurrentThresholds,
+            isConnected: isConnected,
+          ),
           _SettingsTile(
             icon: Icons.electric_bolt,
             title: 'Warning',
             subtitle: '${_settings['current_warning'] ?? '20.0'} A',
-            onTap: () =>
-                _showEditDialog('Current Warning', 'current_warning'),
+            onTap: () => _showEditDialog('Current Warning', 'current_warning'),
           ),
           _SettingsTile(
             icon: Icons.flash_on,
@@ -621,7 +708,11 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 32),
 
           // ── Voltage Zero Offset / Calibration ──
-          _SectionHeader(title: 'Voltage Zero Offset', onSend: _sendVoltageZeroOffset, isConnected: isConnected),
+          _SectionHeader(
+            title: 'Voltage Zero Offset',
+            onSend: _sendVoltageZeroOffset,
+            isConnected: isConnected,
+          ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
@@ -652,7 +743,11 @@ class _SettingsViewState extends State<SettingsView> {
             margin: const EdgeInsets.only(bottom: 4),
             color: AppTheme.primary.withValues(alpha: 0.15),
             child: ListTile(
-              leading: const Icon(Icons.auto_fix_high, color: AppTheme.primary, size: 20),
+              leading: const Icon(
+                Icons.auto_fix_high,
+                color: AppTheme.primary,
+                size: 20,
+              ),
               title: const Text(
                 'Auto-Calibrate Voltage Zero',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
@@ -668,7 +763,11 @@ class _SettingsViewState extends State<SettingsView> {
           const Divider(height: 32),
 
           // ── Sensor Calibration ──
-          _SectionHeader(title: 'Sensor Calibration', onSend: _sendSensorCalibration, isConnected: isConnected),
+          _SectionHeader(
+            title: 'Sensor Calibration',
+            onSend: _sendSensorCalibration,
+            isConnected: isConnected,
+          ),
           _SettingsTile(
             icon: Icons.tune,
             title: 'Voltage Divider Ratio',
@@ -691,10 +790,8 @@ class _SettingsViewState extends State<SettingsView> {
             icon: Icons.tune,
             title: 'ACS712 Sensitivity',
             subtitle: '${_settings['acs712_sensitivity'] ?? '66.0'} mV/A',
-            onTap: () => _showEditDialog(
-              'ACS712 Sensitivity',
-              'acs712_sensitivity',
-            ),
+            onTap: () =>
+                _showEditDialog('ACS712 Sensitivity', 'acs712_sensitivity'),
           ),
           _SettingsTile(
             icon: Icons.tune,
@@ -709,28 +806,116 @@ class _SettingsViewState extends State<SettingsView> {
             icon: Icons.tune,
             title: 'ACS712 Zero Offset',
             subtitle: '${_settings['acs712_zero_offset'] ?? '1300.0'} mV',
-            onTap: () => _showEditDialog(
-              'ACS712 Zero Offset',
-              'acs712_zero_offset',
-            ),
+            onTap: () =>
+                _showEditDialog('ACS712 Zero Offset', 'acs712_zero_offset'),
           ),
           _SettingsTile(
             icon: Icons.tune,
             title: 'ADC Samples',
             subtitle: _settings['adc_samples'] ?? '64',
-            onTap: () =>
-                _showEditDialog('ADC Samples', 'adc_samples'),
+            onTap: () => _showEditDialog('ADC Samples', 'adc_samples'),
           ),
           _SettingsTile(
             icon: Icons.tune,
             title: 'Battery Capacity',
             subtitle: '${_settings['battery_capacity_ah'] ?? '100'} Ah',
-            onTap: () => _showEditDialog(
-              'Battery Capacity',
-              'battery_capacity_ah',
-            ),
+            onTap: () =>
+                _showEditDialog('Battery Capacity', 'battery_capacity_ah'),
           ),
           const Divider(height: 32),
+
+          // ── Push Settings to ESP32 ──
+          _SectionHeader(title: 'Device Configuration'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Push the above settings to the connected ESP32 device via Bluetooth.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Not connected to ESP32 via Bluetooth',
+                              ),
+                              backgroundColor: AppTheme.statusWarning,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final success = await btService.pushSettings(_settings);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                success
+                                    ? 'Settings pushed to ESP32 successfully'
+                                    : 'Failed to push settings',
+                              ),
+                              backgroundColor: success
+                                  ? AppTheme.statusGood
+                                  : AppTheme.statusCritical,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.upload_rounded),
+                      label: const Text('Push to ESP32'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Not connected to ESP32 via Bluetooth',
+                              ),
+                              backgroundColor: AppTheme.statusWarning,
+                            ),
+                          );
+                          return;
+                        }
+
+                        await btService.calibrateZeroCurrent();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Sent CALIBRATE_ZERO command to ESP32',
+                              ),
+                              backgroundColor: AppTheme.statusGood,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.balance),
+                      label: const Text('Calibrate Zero Current'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
 
           // Extra bottom padding for FAB
           const SizedBox(height: 80),
@@ -779,7 +964,10 @@ class _SectionHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 onTap: onSend,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: isConnected
                         ? AppTheme.primary.withValues(alpha: 0.12)
@@ -797,7 +985,9 @@ class _SectionHeader extends StatelessWidget {
                       Icon(
                         Icons.send_rounded,
                         size: 14,
-                        color: isConnected ? AppTheme.primary : AppTheme.textMuted,
+                        color: isConnected
+                            ? AppTheme.primary
+                            : AppTheme.textMuted,
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -805,7 +995,9 @@ class _SectionHeader extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: isConnected ? AppTheme.primary : AppTheme.textMuted,
+                          color: isConnected
+                              ? AppTheme.primary
+                              : AppTheme.textMuted,
                         ),
                       ),
                     ],
