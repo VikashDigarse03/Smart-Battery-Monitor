@@ -81,35 +81,38 @@ class _DashboardViewState extends State<DashboardView> {
 
 
   Widget _buildQuickActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _ActionButton(
-            icon: Icons.bluetooth_connected,
-            label: 'Connect Bluetooth',
-            color: AppTheme.primary,
-            onTap: () => Esp32ConnectionDialog.show(context, mode: 'bluetooth'),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.bluetooth_connected,
+              label: 'Connect Bluetooth',
+              color: AppTheme.primary,
+              onTap: () => Esp32ConnectionDialog.show(context, mode: 'bluetooth'),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionButton(
-            icon: Icons.wifi,
-            label: 'Connect WiFi',
-            color: AppTheme.secondary,
-            onTap: () => Esp32ConnectionDialog.show(context, mode: 'wifi'),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.wifi,
+              label: 'Connect WiFi',
+              color: AppTheme.secondary,
+              onTap: () => Esp32ConnectionDialog.show(context, mode: 'wifi'),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionButton(
-            icon: Icons.assessment_outlined,
-            label: 'Reports',
-            color: AppTheme.statusInfo,
-            onTap: () => context.pushNamed('reports'),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.assessment_outlined,
+              label: 'Reports',
+              color: AppTheme.statusInfo,
+              onTap: () => context.pushNamed('reports'),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -196,6 +199,7 @@ class _ActionButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, color: color, size: 28),
               const SizedBox(height: 6),
