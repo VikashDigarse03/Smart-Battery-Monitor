@@ -732,8 +732,92 @@ class _SettingsViewState extends State<SettingsView> {
           ),
           const Divider(height: 32),
 
+          // ── Push Settings to ESP32 ──
+          _SectionHeader(title: 'Device Configuration'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Push the above settings to the connected ESP32 device via Bluetooth.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Not connected to ESP32 via Bluetooth'),
+                              backgroundColor: AppTheme.statusWarning,
+                            ),
+                          );
+                          return;
+                        }
+                        
+                        final success = await btService.pushSettings(_settings);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success 
+                                  ? 'Settings pushed to ESP32 successfully'
+                                  : 'Failed to push settings'),
+                              backgroundColor: success ? AppTheme.statusGood : AppTheme.statusCritical,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.upload_rounded),
+                      label: const Text('Push to ESP32'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final btService = context.read<Esp32BluetoothService>();
+                        if (!btService.isConnected) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Not connected to ESP32 via Bluetooth'),
+                              backgroundColor: AppTheme.statusWarning,
+                            ),
+                          );
+                          return;
+                        }
+                        
+                        await btService.calibrateZeroCurrent();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Sent CALIBRATE_ZERO command to ESP32'),
+                              backgroundColor: AppTheme.statusGood,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.balance),
+                      label: const Text('Calibrate Zero Current'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+======
           // Extra bottom padding for FAB
           const SizedBox(height: 80),
+
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
