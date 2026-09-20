@@ -25,13 +25,24 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 3, // Upgraded to v3: soft-delete rooms
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
       onConfigure: (db) async {
-        // Enable foreign key constraints
         await db.execute('PRAGMA foreign_keys = ON');
       },
     );
+  }
+  
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 3) {
+      // Add is_archived column to rooms if upgrading from v2
+      try {
+        await db.execute('ALTER TABLE rooms ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {
+        // Column may already exist
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -41,6 +52,7 @@ class AppDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         description TEXT,
+        is_archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -53,6 +65,9 @@ class AppDatabase {
         room_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         position_count INTEGER NOT NULL DEFAULT 20,
+        battery_type TEXT NOT NULL DEFAULT 'Lead Acid',
+        nominal_voltage REAL NOT NULL DEFAULT 12.0,
+        capacity_ah REAL NOT NULL DEFAULT 100.0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
@@ -76,12 +91,7 @@ class AppDatabase {
       CREATE TABLE batteries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         battery_id TEXT NOT NULL UNIQUE,
-        manufacturer TEXT,
-        model TEXT,
         serial_number TEXT,
-        battery_type TEXT NOT NULL DEFAULT 'Lead Acid',
-        nominal_voltage REAL NOT NULL DEFAULT 12.0,
-        capacity_ah REAL,
         status TEXT NOT NULL DEFAULT 'active',
         installation_date TEXT,
         retirement_date TEXT,

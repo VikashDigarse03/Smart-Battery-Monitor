@@ -11,7 +11,6 @@ import '../../../../data/services/esp32_service.dart';
 import '../../../../domain/models/models.dart';
 import '../../../core/theme.dart';
 import '../../../core/constants.dart';
-import 'package:flutter_bluetooth_serial_plus/flutter_bluetooth_serial_plus.dart';
 
 /// Live measurement screen — connects to ESP32 and displays real-time readings.
 ///
@@ -30,9 +29,7 @@ class _MeasurementViewState extends State<MeasurementView> {
   Battery? _battery;
   Esp32Reading? _latestReading;
   bool _isLoading = true;
-  bool _isConnected = false;
   bool _isSaving = false;
-  String _connectionStatus = 'Disconnected';
   ConnectionMode _connectionMode = ConnectionMode.wifi;
 
   late Esp32WifiService _wifiService;
@@ -58,142 +55,22 @@ class _MeasurementViewState extends State<MeasurementView> {
         ? ConnectionMode.bluetooth 
         : ConnectionMode.wifi;
 
+    if (_connectionMode == ConnectionMode.wifi) {
+      _wifiService.startPolling();
+      _readingSub = _wifiService.readingStream.listen((reading) {
+        setState(() {
+          _latestReading = reading;
+        });
+      });
+    } else {
+      _readingSub = _btService.readingStream.listen((reading) {
+        setState(() {
+          _latestReading = reading;
+        });
+      });
+    }
+
     setState(() => _isLoading = false);
-  }
-
-  Future<void> _connectDevice() async {
-    setState(() => _connectionStatus = 'Connecting...');
-
-    if (_connectionMode == ConnectionMode.wifi) {
-      // WiFi mode — poll ESP32 HTTP endpoint
-      final reachable = await _wifiService.pingDevice();
-      if (reachable) {
-        _wifiService.startPolling();
-        _readingSub = _wifiService.readingStream.listen((reading) {
-          setState(() {
-            _latestReading = reading;
-            _isConnected = true;
-            _connectionStatus = 'Connected (WiFi)';
-          });
-        });
-        setState(() {
-          _isConnected = true;
-          _connectionStatus = 'Connected (WiFi)';
-        });
-      } else {
-        setState(() {
-          _connectionStatus = 'ESP32 not reachable';
-          _isConnected = false;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Cannot reach ESP32. Make sure you are connected to the ESP32 WiFi network.',
-              ),
-            ),
-          );
-        }
-      }
-    } else {
-      // Bluetooth mode
-      final device = await _selectBluetoothDevice();
-      if (device == null) {
-        setState(() {
-          _connectionStatus = 'Disconnected';
-          _isConnected = false;
-        });
-        return;
-      }
-      
-      setState(() => _connectionStatus = 'Connecting to ${device.name ?? device.address}...');
-      
-      final connected = await _btService.connect(device.address);
-      if (connected) {
-        _readingSub = _btService.readingStream.listen((reading) {
-          setState(() {
-            _latestReading = reading;
-            _isConnected = true;
-            _connectionStatus = 'Connected (Bluetooth)';
-          });
-        });
-        setState(() {
-          _isConnected = true;
-          _connectionStatus = 'Connected (Bluetooth)';
-        });
-      } else {
-        setState(() {
-          _connectionStatus = 'Bluetooth connection failed';
-          _isConnected = false;
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to connect to the Bluetooth device.'),
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  Future<BluetoothDevice?> _selectBluetoothDevice() async {
-    try {
-      final devices = await FlutterBluetoothSerial.instance.getBondedDevices();
-      if (!mounted) return null;
-      
-      return showDialog<BluetoothDevice>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Select ESP32 Device'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: devices.isEmpty 
-                  ? const Text('No paired devices found. Please pair your ESP32 in Android Settings first.')
-                  : ListView.builder(
-                shrinkWrap: true,
-                itemCount: devices.length,
-                itemBuilder: (context, index) {
-                  final device = devices[index];
-                  return ListTile(
-                    title: Text(device.name ?? 'Unknown device'),
-                    subtitle: Text(device.address),
-                    onTap: () => Navigator.pop(context, device),
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-            ],
-          );
-        }
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error getting Bluetooth devices: $e')),
-        );
-      }
-      return null;
-    }
-  }
-
-  void _disconnectDevice() {
-    if (_connectionMode == ConnectionMode.wifi) {
-      _wifiService.stopPolling();
-    } else {
-      _btService.disconnect();
-    }
-    _readingSub?.cancel();
-    setState(() {
-      _isConnected = false;
-      _connectionStatus = 'Disconnected';
-    });
   }
 
   Future<void> _saveMeasurement() async {
@@ -228,8 +105,8 @@ class _MeasurementViewState extends State<MeasurementView> {
           ),
         );
 
-        // Navigate to battery detail to see the saved measurement
-        context.go('/battery/${_battery!.id}');
+        // Navigate back to battery detail to see the saved measurement
+        context.pop();
       }
     } catch (e) {
       if (mounted) {
@@ -245,11 +122,6 @@ class _MeasurementViewState extends State<MeasurementView> {
   @override
   void dispose() {
     _readingSub?.cancel();
-    if (_connectionMode == ConnectionMode.wifi) {
-      _wifiService.stopPolling();
-    } else {
-      _btService.disconnect();
-    }
     super.dispose();
   }
 
@@ -279,51 +151,6 @@ class _MeasurementViewState extends State<MeasurementView> {
             ),
           const SizedBox(height: 12),
 
-          // ── Connection Control ──
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isConnected
-                            ? Icons.wifi
-                            : Icons.wifi_off,
-                        color: _isConnected
-                            ? AppTheme.statusGood
-                            : AppTheme.statusCritical,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _connectionStatus,
-                          style: TextStyle(
-                            color: _isConnected
-                                ? AppTheme.statusGood
-                                : AppTheme.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (!_isConnected)
-                        ElevatedButton(
-                          onPressed: _connectDevice,
-                          child: const Text('Connect'),
-                        )
-                      else
-                        OutlinedButton(
-                          onPressed: _disconnectDevice,
-                          child: const Text('Disconnect'),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
 
           // ── Live Readings ──
           _buildReadingDisplay(),
@@ -375,7 +202,7 @@ class _MeasurementViewState extends State<MeasurementView> {
                 Icon(Icons.speed, size: 64, color: AppTheme.textMuted),
                 const SizedBox(height: 16),
                 Text(
-                  'Connect to ESP32 to see live readings',
+                  'Waiting for readings...',
                   style: TextStyle(color: AppTheme.textSecondary),
                   textAlign: TextAlign.center,
                 ),

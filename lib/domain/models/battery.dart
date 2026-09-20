@@ -58,12 +58,7 @@ enum BatteryStatus {
 class Battery {
   final int? id;
   final String batteryId; // e.g., "BAT-000123"
-  final String? manufacturer;
-  final String? model;
   final String? serialNumber;
-  final String batteryType; // e.g., "Lead Acid"
-  final double nominalVoltage; // e.g., 12.0
-  final double? capacityAh; // e.g., 100.0
   final BatteryStatus status;
   final DateTime? installationDate;
   final DateTime? retirementDate;
@@ -79,12 +74,7 @@ class Battery {
   const Battery({
     this.id,
     required this.batteryId,
-    this.manufacturer,
-    this.model,
     this.serialNumber,
-    this.batteryType = 'Lead Acid',
-    this.nominalVoltage = 12.0,
-    this.capacityAh,
     this.status = BatteryStatus.active,
     this.installationDate,
     this.retirementDate,
@@ -108,12 +98,7 @@ class Battery {
   Battery copyWith({
     int? id,
     String? batteryId,
-    String? manufacturer,
-    String? model,
     String? serialNumber,
-    String? batteryType,
-    double? nominalVoltage,
-    double? capacityAh,
     BatteryStatus? status,
     DateTime? installationDate,
     DateTime? retirementDate,
@@ -127,12 +112,7 @@ class Battery {
     return Battery(
       id: id ?? this.id,
       batteryId: batteryId ?? this.batteryId,
-      manufacturer: manufacturer ?? this.manufacturer,
-      model: model ?? this.model,
       serialNumber: serialNumber ?? this.serialNumber,
-      batteryType: batteryType ?? this.batteryType,
-      nominalVoltage: nominalVoltage ?? this.nominalVoltage,
-      capacityAh: capacityAh ?? this.capacityAh,
       status: status ?? this.status,
       installationDate: installationDate ?? this.installationDate,
       retirementDate: retirementDate ?? this.retirementDate,

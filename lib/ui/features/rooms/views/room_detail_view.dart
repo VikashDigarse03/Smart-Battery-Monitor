@@ -38,27 +38,49 @@ class _RoomDetailViewState extends State<RoomDetailView> {
   Future<void> _addRack() async {
     final nameController = TextEditingController();
     final posCountController = TextEditingController(text: '20');
+    final batteryTypeController = TextEditingController(text: 'Lead Acid');
+    final voltageController = TextEditingController(text: '12.0');
+    final capacityController = TextEditingController(text: '100.0');
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Rack'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Rack Name'),
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: posCountController,
-              decoration:
-                  const InputDecoration(labelText: 'Number of Positions'),
-              keyboardType: TextInputType.number,
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Rack Name'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: posCountController,
+                decoration:
+                    const InputDecoration(labelText: 'Number of Positions (Slots)'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: batteryTypeController,
+                decoration: const InputDecoration(labelText: 'Battery Type'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: voltageController,
+                decoration: const InputDecoration(labelText: 'Nominal Voltage (V)'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: capacityController,
+                decoration: const InputDecoration(labelText: 'Capacity (Ah)'),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -79,8 +101,69 @@ class _RoomDetailViewState extends State<RoomDetailView> {
         widget.roomId,
         nameController.text.trim(),
         positionCount: int.tryParse(posCountController.text) ?? 20,
+        batteryType: batteryTypeController.text.trim(),
+        nominalVoltage: double.tryParse(voltageController.text) ?? 12.0,
+        capacityAh: double.tryParse(capacityController.text) ?? 100.0,
       );
       _loadData();
+    }
+  }
+
+  Future<void> _renameRoom() async {
+    if (_room == null) return;
+    final nameController = TextEditingController(text: _room!.name);
+    final descController = TextEditingController(text: _room!.description ?? '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Room'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Room Name'),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && nameController.text.isNotEmpty) {
+      final repo = context.read<LocationRepository>();
+      await repo.updateRoom(
+        _room!.id!,
+        nameController.text.trim(),
+        description: descController.text.trim().isEmpty
+            ? null
+            : descController.text.trim(),
+      );
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Room renamed successfully'),
+            backgroundColor: AppTheme.statusGood,
+          ),
+        );
+      }
     }
   }
 
@@ -90,6 +173,11 @@ class _RoomDetailViewState extends State<RoomDetailView> {
       appBar: AppBar(
         title: Text(_room?.name ?? 'Room'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Rename Room',
+            onPressed: _renameRoom,
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add Rack',

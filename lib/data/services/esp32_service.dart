@@ -209,8 +209,8 @@ class Esp32BluetoothService {
   Future<bool> connect(String address) async {
     try {
       _connection = await BluetoothConnection.toAddress(address);
-      if (_connection != null && _connection!.isConnected) {
-        _connection!.input!.listen(_onDataReceived).onDone(() {
+      if (_connection!.isConnected) {
+        _connection!.input.listen(_onDataReceived).onDone(() {
           // Handle disconnection internally if needed
           disconnect();
         });
