@@ -5,10 +5,9 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:flutter_bluetooth_serial_plus/flutter_bluetooth_serial_plus.dart';
 
+import '../../ui/core/constants.dart';
+
 /// Parsed measurement data from ESP32 (both BT JSON and WiFi /data endpoint).
-///
-/// Matches the JSON format sent by BatteryMonitor.ino's sendBluetoothData()
-/// and handleData() functions.
 class Esp32Reading {
   final bool connected;
   final double voltage;
@@ -40,17 +39,34 @@ class Esp32Reading {
     this.alertMessage,
   });
 
+  /// Sentinel reading emitted when the connection is lost.
+  factory Esp32Reading.disconnected() => const Esp32Reading(
+        connected: false,
+        voltage: 0,
+        current: 0,
+        temperature: 0,
+        power: 0,
+        batteryPercent: 0,
+        timeLeft: 0,
+        batteryHealth: 0,
+        capacity: 0,
+        timestamp: 0,
+        wifiConnected: false,
+      );
+
   /// Parse from BT JSON (short keys: v, i, t, p, pct, etc.)
   factory Esp32Reading.fromBluetoothJson(Map<String, dynamic> json) {
+    final voltage = (json['v'] as num?)?.toDouble() ?? 0.0;
+    final temp = (json['t'] as num?)?.toDouble() ?? 0.0;
     return Esp32Reading(
       connected: json['connected'] as bool? ?? false,
-      voltage: (json['v'] as num?)?.toDouble() ?? 0.0,
+      voltage: voltage,
       current: (json['i'] as num?)?.toDouble() ?? 0.0,
-      temperature: (json['t'] as num?)?.toDouble() ?? 0.0,
+      temperature: temp,
       power: (json['p'] as num?)?.toDouble() ?? 0.0,
-      batteryPercent: (json['pct'] as num?)?.toInt() ?? 0,
+      batteryPercent: AppConstants.computeSoc(voltage),
       timeLeft: (json['time_left'] as num?)?.toDouble() ?? 0.0,
-      batteryHealth: (json['health'] as num?)?.toInt() ?? 100,
+      batteryHealth: AppConstants.calculateHealth(voltage: voltage, temperature: temp),
       capacity: (json['capacity'] as num?)?.toInt() ?? 100,
       timestamp: (json['ts'] as num?)?.toInt() ?? 0,
       wifiConnected: json['wifi'] as bool? ?? false,
@@ -59,17 +75,19 @@ class Esp32Reading {
     );
   }
 
-  /// Parse from WiFi /data JSON (full keys: voltage, current, temperature, etc.)
+  /// Parse from WiFi /data JSON (full keys).
   factory Esp32Reading.fromWifiJson(Map<String, dynamic> json) {
+    final voltage = (json['voltage'] as num?)?.toDouble() ?? 0.0;
+    final temp = (json['temperature'] as num?)?.toDouble() ?? 0.0;
     return Esp32Reading(
       connected: json['connected'] as bool? ?? false,
-      voltage: (json['voltage'] as num?)?.toDouble() ?? 0.0,
+      voltage: voltage,
       current: (json['current'] as num?)?.toDouble() ?? 0.0,
-      temperature: (json['temperature'] as num?)?.toDouble() ?? 0.0,
+      temperature: temp,
       power: (json['power'] as num?)?.toDouble() ?? 0.0,
-      batteryPercent: (json['battery_pct'] as num?)?.toInt() ?? 0,
+      batteryPercent: AppConstants.computeSoc(voltage),
       timeLeft: (json['time_left'] as num?)?.toDouble() ?? 0.0,
-      batteryHealth: (json['health'] as num?)?.toInt() ?? 100,
+      batteryHealth: AppConstants.calculateHealth(voltage: voltage, temperature: temp),
       capacity: (json['capacity'] as num?)?.toInt() ?? 100,
       timestamp: (json['timestamp'] as num?)?.toInt() ?? 0,
       wifiConnected: true,
@@ -79,44 +97,30 @@ class Esp32Reading {
   }
 }
 
-/// Response from ESP32 command.
-class Esp32CommandResponse {
-  final String command;
-  final String? status;
-  final Map<String, dynamic> data;
+// ---------------------------------------------------------------------------
+// WiFi Service
+// ---------------------------------------------------------------------------
 
-  const Esp32CommandResponse({
-    required this.command,
-    this.status,
-    required this.data,
-  });
-
-  factory Esp32CommandResponse.fromJson(Map<String, dynamic> json) {
-    return Esp32CommandResponse(
-      command: json['cmd'] as String? ?? 'unknown',
-      status: json['status'] as String?,
-      data: json,
-    );
-  }
-}
-
-/// Service for communicating with ESP32 over WiFi (HTTP).
-///
-/// The ESP32 runs as a WiFi Access Point. The phone connects to the ESP32's
-/// WiFi network, then polls the /data endpoint for readings and sends
-/// commands via HTTP.
+/// Polls ESP32 over HTTP. Emits disconnected readings after 3 consecutive
+/// failures so the UI can show a "lost connection" state.
 class Esp32WifiService {
   String _ipAddress;
   int _port;
+
   Timer? _pollingTimer;
   final StreamController<Esp32Reading> _readingController =
       StreamController<Esp32Reading>.broadcast();
 
-  /// Stream of readings from the ESP32 via WiFi polling.
   Stream<Esp32Reading> get readingStream => _readingController.stream;
 
   bool _isPolling = false;
   bool get isPolling => _isPolling;
+
+  bool _lastPollSucceeded = false;
+  bool get isConnected => _lastPollSucceeded;
+
+  int _consecutiveFails = 0;
+  static const int _maxFails = 3;
 
   Esp32WifiService({
     String ipAddress = '192.168.4.1',
@@ -124,66 +128,70 @@ class Esp32WifiService {
   })  : _ipAddress = ipAddress,
         _port = port;
 
-  /// Update the ESP32 IP address (from Settings).
-  void setIpAddress(String ip) {
-    _ipAddress = ip;
-  }
-
-  void setPort(int port) {
-    _port = port;
-  }
+  void setIpAddress(String ip) => _ipAddress = ip;
+  void setPort(int port) => _port = port;
 
   String get baseUrl => 'http://$_ipAddress:$_port';
 
-  /// Fetch a single reading from /data endpoint.
+  /// Fetch one reading. Returns null on failure.
   Future<Esp32Reading?> fetchReading() async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/data'))
-          .timeout(const Duration(seconds: 5));
-
+          .timeout(const Duration(seconds: 3));
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         return Esp32Reading.fromWifiJson(json);
       }
-    } catch (e) {
-      // Connection failed — ESP32 not reachable
+    } catch (_) {
+      // ignore — handled by fail counter below
     }
     return null;
   }
 
-  /// Start polling the ESP32 for readings at regular intervals.
+  /// Start polling at [interval]. After [_maxFails] consecutive failures,
+  /// a disconnected reading is emitted and the interval slows to 5 s until
+  /// the next success.
   void startPolling({Duration interval = const Duration(seconds: 2)}) {
     stopPolling();
     _isPolling = true;
-    _pollingTimer = Timer.periodic(interval, (_) async {
+    _consecutiveFails = 0;
+    _schedulePoll(interval);
+  }
+
+  void _schedulePoll(Duration interval) {
+    _pollingTimer = Timer(interval, () async {
+      if (!_isPolling) return;
+
       final reading = await fetchReading();
+
       if (reading != null) {
+        _consecutiveFails = 0;
+        _lastPollSucceeded = true;
         _readingController.add(reading);
+        _schedulePoll(const Duration(seconds: 2));
+      } else {
+        _consecutiveFails++;
+        _lastPollSucceeded = false;
+        if (_consecutiveFails >= _maxFails) {
+          // Notify UI that the connection is gone
+          _readingController.add(Esp32Reading.disconnected());
+        }
+        // Back off: slow poll when struggling
+        final backoff = _consecutiveFails >= _maxFails
+            ? const Duration(seconds: 5)
+            : const Duration(seconds: 2);
+        _schedulePoll(backoff);
       }
     });
   }
 
-  /// Stop polling.
   void stopPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = null;
     _isPolling = false;
-  }
-
-  /// Send a configuration command to ESP32 via the BT serial bridge.
-  /// For WiFi, we could add HTTP endpoints, but currently configuration
-  /// is done via Bluetooth commands. This method is a placeholder
-  /// for future HTTP-based configuration.
-  Future<bool> pingDevice() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/data'))
-          .timeout(const Duration(seconds: 3));
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
+    _lastPollSucceeded = false;
+    _consecutiveFails = 0;
   }
 
   void dispose() {
@@ -192,32 +200,38 @@ class Esp32WifiService {
   }
 }
 
-/// Service for communicating with ESP32 over Bluetooth Classic.
+// ---------------------------------------------------------------------------
+// Bluetooth Service
+// ---------------------------------------------------------------------------
+
+/// Reads JSON lines from ESP32 over Bluetooth Classic.
+/// Emits a disconnected reading when the BT session drops so the UI knows.
 class Esp32BluetoothService {
   BluetoothConnection? _connection;
   final StreamController<Esp32Reading> _readingController =
       StreamController<Esp32Reading>.broadcast();
 
-  /// Stream of readings from the ESP32 via Bluetooth.
   Stream<Esp32Reading> get readingStream => _readingController.stream;
 
   bool get isConnected => _connection?.isConnected ?? false;
 
   String _buffer = '';
+  static const int _bufferMaxLen = 2048;
 
-  /// Connect to the ESP32 device using its MAC address.
+  /// Connect to ESP32 by MAC address.
   Future<bool> connect(String address) async {
     try {
       _connection = await BluetoothConnection.toAddress(address);
       if (_connection!.isConnected) {
-        _connection!.input.listen(_onDataReceived).onDone(() {
-          // Handle disconnection internally if needed
-          disconnect();
-        });
+        _connection!.input!.listen(
+          _onDataReceived,
+          onDone: _onDisconnected,
+          cancelOnError: true,
+        );
         return true;
       }
-    } catch (e) {
-      // Connection error
+    } catch (_) {
+      // Connection error — caller handles the false return
     }
     return false;
   }
@@ -225,28 +239,39 @@ class Esp32BluetoothService {
   void _onDataReceived(Uint8List data) {
     _buffer += ascii.decode(data);
 
-    // Parse complete lines from the buffer
+    // Guard against unbounded buffer growth from malformed data
+    if (_buffer.length > _bufferMaxLen) {
+      _buffer = _buffer.substring(_buffer.length - (_bufferMaxLen ~/ 2));
+    }
+
     while (_buffer.contains('\n')) {
-      int newlineIndex = _buffer.indexOf('\n');
-      String line = _buffer.substring(0, newlineIndex).trim();
+      final newlineIndex = _buffer.indexOf('\n');
+      final line = _buffer.substring(0, newlineIndex).trim();
       _buffer = _buffer.substring(newlineIndex + 1);
 
       if (line.startsWith('{') && line.endsWith('}')) {
         try {
           final jsonMap = jsonDecode(line) as Map<String, dynamic>;
-          // Ignore command responses, we only want readings
+          // Ignore command-response packets
           if (!jsonMap.containsKey('cmd')) {
-            final reading = Esp32Reading.fromBluetoothJson(jsonMap);
-            _readingController.add(reading);
+            _readingController.add(Esp32Reading.fromBluetoothJson(jsonMap));
           }
-        } catch (e) {
-          // Ignore malformed JSON
+        } catch (_) {
+          // Malformed JSON — skip
         }
       }
     }
   }
 
-  /// Send a command to the ESP32 over Bluetooth.
+  void _onDisconnected() {
+    // Notify UI before cleaning up
+    if (!_readingController.isClosed) {
+      _readingController.add(Esp32Reading.disconnected());
+    }
+    disconnect();
+  }
+
+  /// Send a newline-terminated command to the ESP32.
   Future<void> sendCommand(String command) async {
     if (isConnected && _connection != null) {
       _connection!.output.add(ascii.encode('$command\n'));
@@ -254,61 +279,9 @@ class Esp32BluetoothService {
     }
   }
 
-  /// Push configuration settings to the ESP32.
-  Future<bool> pushSettings(Map<String, String> settings) async {
-    if (!isConnected) return false;
-
-    final Map<String, dynamic> espSettings = {};
-    
-    void parseAndAdd(String destKey, String srcKey) {
-      if (settings.containsKey(srcKey)) {
-        final val = double.tryParse(settings[srcKey]!);
-        if (val != null) espSettings[destKey] = val;
-      }
-    }
-    
-    void parseIntAndAdd(String destKey, String srcKey) {
-      if (settings.containsKey(srcKey)) {
-        final val = int.tryParse(settings[srcKey]!);
-        if (val != null) espSettings[destKey] = val;
-      }
-    }
-
-    parseAndAdd('v_crit_low', 'volt_critical_low');
-    parseAndAdd('v_warn_low', 'volt_warning_low');
-    parseAndAdd('v_norm_low', 'volt_normal_low');
-    parseAndAdd('v_full', 'volt_full');
-    parseAndAdd('v_over', 'volt_overcharge');
-    
-    parseAndAdd('t_warn', 'temp_warning');
-    parseAndAdd('t_crit', 'temp_critical');
-    
-    parseAndAdd('c_warn', 'current_warning');
-    parseAndAdd('c_crit', 'current_critical');
-    
-    parseAndAdd('v_div', 'voltage_divider_ratio');
-    parseAndAdd('v_cal', 'voltage_calibration');
-    
-    parseAndAdd('i_sens', 'acs712_sensitivity');
-    parseAndAdd('i_div', 'current_divider_ratio');
-    
-    parseIntAndAdd('adc_samp', 'adc_samples');
-    parseIntAndAdd('capacity', 'battery_capacity_ah');
-
-    try {
-      final jsonStr = jsonEncode(espSettings);
-      await sendCommand('CONFIG_SET:$jsonStr');
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
   /// Trigger zero-current calibration on the ESP32.
   Future<void> calibrateZeroCurrent() async {
-    if (isConnected) {
-      await sendCommand('CALIBRATE_ZERO');
-    }
+    if (isConnected) await sendCommand('CALIBRATE_ZERO');
   }
 
   /// Disconnect the active Bluetooth session.
@@ -323,4 +296,3 @@ class Esp32BluetoothService {
     _readingController.close();
   }
 }
-

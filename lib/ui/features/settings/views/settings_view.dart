@@ -569,6 +569,37 @@ class _SettingsViewState extends State<SettingsView> {
               ),
             ),
 
+          // ── Metrics Display (SOC & SOH Toggles) ──
+          const _SectionHeader(title: 'Display Metrics'),
+          Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.battery_charging_full, color: AppTheme.socColor),
+                  title: const Text('State of Charge (SOC)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Estimate charge level from resting voltage curve',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  value: _settings['show_soc'] != 'false',
+                  onChanged: (val) => _updateSetting('show_soc', val.toString()),
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.health_and_safety, color: AppTheme.healthColor),
+                  title: const Text('State of Health (SOH)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Evaluate battery degradation from damage indicators',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  value: _settings['show_soh'] != 'false',
+                  onChanged: (val) => _updateSetting('show_soh', val.toString()),
+                ),
+              ],
+            ),
+          ),
+
           // ── ESP32 Connection ──
           _SectionHeader(
             title: 'ESP32 WiFi Config',
@@ -843,36 +874,7 @@ class _SettingsViewState extends State<SettingsView> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final btService = context.read<Esp32BluetoothService>();
-                        if (!btService.isConnected) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Not connected to ESP32 via Bluetooth',
-                              ),
-                              backgroundColor: AppTheme.statusWarning,
-                            ),
-                          );
-                          return;
-                        }
-
-                        final success = await btService.pushSettings(_settings);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                success
-                                    ? 'Settings pushed to ESP32 successfully'
-                                    : 'Failed to push settings',
-                              ),
-                              backgroundColor: success
-                                  ? AppTheme.statusGood
-                                  : AppTheme.statusCritical,
-                            ),
-                          );
-                        }
-                      },
+                      onPressed: () => _pushAllToEsp32(),
                       icon: const Icon(Icons.upload_rounded),
                       label: const Text('Push to ESP32'),
                     ),

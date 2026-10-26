@@ -234,6 +234,8 @@ class AppDatabase {
       'esp32_wifi_password': '12345678',
       'connection_mode': 'bluetooth', // 'bluetooth' or 'wifi'
       'next_battery_number': '1', // For auto-generating BAT-XXXXXX
+      'show_soc': 'true', // Toggle State of Charge (SOC)
+      'show_soh': 'true', // Toggle State of Health (SOH)
     };
 
     for (final entry in defaults.entries) {

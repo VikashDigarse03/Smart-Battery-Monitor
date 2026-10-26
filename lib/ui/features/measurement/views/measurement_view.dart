@@ -30,6 +30,10 @@ class _MeasurementViewState extends State<MeasurementView> {
   Esp32Reading? _latestReading;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _connectionLost = false;
+  bool _showSoc = true;
+  bool _showSoh = true;
+  List<Measurement> _batteryHistory = [];
   ConnectionMode _connectionMode = ConnectionMode.wifi;
 
   late Esp32WifiService _wifiService;
@@ -48,24 +52,37 @@ class _MeasurementViewState extends State<MeasurementView> {
     final batteryRepo = context.read<BatteryRepository>();
     _battery = await batteryRepo.findById(widget.batteryDbId);
 
-    // Load connection mode from settings
+    // Load connection mode and metric display settings
     final db = context.read<AppDatabase>();
     final modeString = await db.getSetting('connection_mode');
     _connectionMode = modeString == 'bluetooth' 
         ? ConnectionMode.bluetooth 
         : ConnectionMode.wifi;
 
+    final showSocSetting = await db.getSetting('show_soc');
+    final showSohSetting = await db.getSetting('show_soh');
+    _showSoc = showSocSetting != 'false';
+    _showSoh = showSohSetting != 'false';
+
+    final measurementRepo = context.read<MeasurementRepository>();
+    _batteryHistory = await measurementRepo.getMeasurementsForBattery(
+      widget.batteryDbId,
+      limit: 30,
+    );
+
     if (_connectionMode == ConnectionMode.wifi) {
       _wifiService.startPolling();
       _readingSub = _wifiService.readingStream.listen((reading) {
         setState(() {
           _latestReading = reading;
+          _connectionLost = !reading.connected && reading.voltage == 0;
         });
       });
     } else {
       _readingSub = _btService.readingStream.listen((reading) {
         setState(() {
           _latestReading = reading;
+          _connectionLost = !reading.connected && reading.voltage == 0;
         });
       });
     }
@@ -82,14 +99,24 @@ class _MeasurementViewState extends State<MeasurementView> {
       final measurementRepo = context.read<MeasurementRepository>();
       final now = DateTime.now();
 
+      final soc = _showSoc ? AppConstants.computeSoc(_latestReading!.voltage) : null;
+      final soh = _showSoh
+          ? AppConstants.calculateHealth(
+              voltage: _latestReading!.voltage,
+              temperature: _latestReading!.temperature,
+              history: _batteryHistory,
+              installationDate: _battery?.installationDate,
+            )
+          : null;
+
       final measurement = Measurement(
         batteryId: _battery!.id!,
         voltage: _latestReading!.voltage,
         current: _latestReading!.current,
         temperature: _latestReading!.temperature,
         power: _latestReading!.power,
-        batteryPercent: _latestReading!.batteryPercent,
-        batteryHealth: _latestReading!.batteryHealth,
+        batteryPercent: soc,
+        batteryHealth: soh,
         timeLeft: _latestReading!.timeLeft,
         measuredAt: now,
         createdAt: now,
@@ -105,8 +132,8 @@ class _MeasurementViewState extends State<MeasurementView> {
           ),
         );
 
-        // Navigate back to battery detail to see the saved measurement
-        context.pop();
+        // Pop with `true` so the caller knows to refresh its data
+        context.pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -122,6 +149,9 @@ class _MeasurementViewState extends State<MeasurementView> {
   @override
   void dispose() {
     _readingSub?.cancel();
+    if (_connectionMode == ConnectionMode.wifi) {
+      _wifiService.stopPolling();
+    }
     super.dispose();
   }
 
@@ -140,6 +170,30 @@ class _MeasurementViewState extends State<MeasurementView> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+            // ── Connection Lost Banner ──
+            if (_connectionLost)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.statusWarning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.statusWarning.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.signal_wifi_off, color: AppTheme.statusWarning, size: 18),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Connection lost — waiting to reconnect...',
+                        style: TextStyle(color: AppTheme.statusWarning, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
           // ── Battery Info ──
           if (_battery != null)
             Card(
@@ -245,6 +299,14 @@ class _MeasurementViewState extends State<MeasurementView> {
       );
     }
 
+    final soc = AppConstants.computeSoc(reading.voltage);
+    final soh = AppConstants.calculateHealth(
+      voltage: reading.voltage,
+      temperature: reading.temperature,
+      history: _batteryHistory,
+      installationDate: _battery?.installationDate,
+    );
+
     return Column(
       children: [
         // Big reading cards
@@ -295,30 +357,34 @@ class _MeasurementViewState extends State<MeasurementView> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _BigReadingCard(
-                label: 'Charge',
-                value: '${reading.batteryPercent}',
-                unit: '%',
-                color: AppTheme.getSocColor(reading.batteryPercent),
-                icon: Icons.battery_charging_full,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _BigReadingCard(
-                label: 'Health',
-                value: '${reading.batteryHealth}',
-                unit: '%',
-                color: AppTheme.getHealthColor(reading.batteryHealth),
-                icon: Icons.health_and_safety,
-              ),
-            ),
-          ],
-        ),
+        if (_showSoc || _showSoh) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (_showSoc)
+                Expanded(
+                  child: _BigReadingCard(
+                    label: 'Charge (SOC)',
+                    value: '$soc',
+                    unit: '%',
+                    color: AppTheme.getSocColor(soc),
+                    icon: Icons.battery_charging_full,
+                  ),
+                ),
+              if (_showSoc && _showSoh) const SizedBox(width: 12),
+              if (_showSoh)
+                Expanded(
+                  child: _BigReadingCard(
+                    label: 'Health (SOH)',
+                    value: '$soh',
+                    unit: '%',
+                    color: AppTheme.getHealthColor(soh),
+                    icon: Icons.health_and_safety,
+                  ),
+                ),
+            ],
+          ),
+        ],
 
         // Alert banner
         if (reading.alert != null) ...[

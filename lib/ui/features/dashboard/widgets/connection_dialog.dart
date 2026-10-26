@@ -76,25 +76,29 @@ class _Esp32ConnectionDialogState extends State<Esp32ConnectionDialog> {
   }
 
   Future<void> _connectWifi() async {
+    final db = context.read<AppDatabase>();
+    final ssid = await db.getSetting('esp32_wifi_ssid') ?? 'ESP32_Battery';
+    final password = await db.getSetting('esp32_wifi_password') ?? '12345678';
+
     setState(() {
       _isConnecting = true;
-      _wifiStatusText = 'Connecting to ESP32_Battery WiFi...';
+      _wifiStatusText = 'Connecting to $ssid WiFi...';
     });
     
     try {
       // 1. Attempt to connect to the WiFi AP programmatically
       final isConnectedToWifi = await WiFiForIoTPlugin.connect(
-        'ESP32_Battery',
-        password: '12345678',
+        ssid,
+        password: password,
         joinOnce: false,
         security: NetworkSecurity.WPA,
-        withInternet: false, // ESP32 AP doesn't have internet
+        withInternet: false,
       );
       
       if (!isConnectedToWifi) {
         if (mounted) {
           setState(() {
-            _wifiStatusText = 'Failed to auto-connect to ESP32_Battery WiFi.\nPlease connect manually in your phone settings, then click Verify Connection.';
+            _wifiStatusText = 'Failed to auto-connect to $ssid WiFi.\nPlease connect manually in your phone settings, then click Verify Connection.';
             _isConnecting = false;
           });
         }
@@ -117,7 +121,7 @@ class _Esp32ConnectionDialogState extends State<Esp32ConnectionDialog> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _wifiStatusText = 'Error connecting automatically.\nPlease connect manually to ESP32_Battery in settings, then click Verify Connection.';
+          _wifiStatusText = 'Error connecting automatically.\nPlease connect manually to $ssid in settings, then click Verify Connection.';
           _isConnecting = false;
         });
       }
@@ -136,7 +140,7 @@ class _Esp32ConnectionDialogState extends State<Esp32ConnectionDialog> {
       final ip = await db.getSetting('esp32_ip_address') ?? '192.168.4.1';
       wifiService.setIpAddress(ip);
       
-      final connected = await wifiService.pingDevice();
+      final connected = await wifiService.fetchReading() != null;
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

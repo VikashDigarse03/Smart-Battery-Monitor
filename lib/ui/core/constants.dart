@@ -1,3 +1,5 @@
+import '../../domain/models/models.dart';
+
 /// Application-wide constants, thresholds, and default settings.
 ///
 /// Alert thresholds match the ESP32 firmware defaults but are user-configurable
@@ -64,6 +66,129 @@ class AppConstants {
     (11.31, 10),
     (10.50, 0),
   ];
+
+  // ─── SOH Peak-Voltage Table (12V Lead-Acid) ──────────────────
+  static const List<(double peakVoltage, int health)> sohPeakVoltageTable = [
+    (12.70, 100),
+    (12.50,  85),
+    (12.30,  70),
+    (12.00,  50),
+    (11.50,  25),
+    (10.50,   0),
+  ];
+
+  /// Estimate State of Charge (0–100 %) from the current voltage reading
+  /// by linearly interpolating [socVoltageTable].
+  static int computeSoc(double voltage) {
+    if (voltage <= 0.5) return 0;
+    final table = socVoltageTable;
+    if (voltage >= table.first.$1) return table.first.$2;
+    if (voltage <= table.last.$1) return table.last.$2;
+    for (int i = 0; i < table.length - 1; i++) {
+      final hi = table[i];
+      final lo = table[i + 1];
+      if (voltage <= hi.$1 && voltage >= lo.$1) {
+        final t = (voltage - lo.$1) / (hi.$1 - lo.$1);
+        return (lo.$2 + t * (hi.$2 - lo.$2)).round().clamp(0, 100);
+      }
+    }
+    return 0;
+  }
+
+  /// Evaluates Battery State of Health (SOH) (0–100%) based on physical damage
+  /// indicators and historical stress without requiring a current sensor.
+  ///
+  /// Physical damage factors:
+  /// 1. Deep discharge (< 10.5V): Causes irreversible plate sulfation and active material loss.
+  /// 2. Overcharge (> 14.8V): Causes electrolyte boiling (dry-out) and positive grid corrosion.
+  /// 3. Thermal stress (> 45°C / > 55°C): Accelerates chemical breakdown (Arrhenius rule).
+  /// 4. Dead / shorted cell: Indicated by persistent low voltage (< 10.8V) across multiple readings.
+  /// 5. Inability to reach full charge: Peak recorded voltage consistently lower than 12.5V.
+  /// 6. Calendar age: If [installationDate] is known (~8% degradation per year after year 1).
+  static int calculateHealth({
+    required double voltage,
+    required double temperature,
+    List<Measurement>? history,
+    DateTime? installationDate,
+  }) {
+    if (voltage <= 0.5) return 0; // Disconnected or 0V
+    
+    double health = 100.0;
+
+    // --- 1. Immediate Critical Stress Penalties ---
+    if (voltage < defaultVoltCriticalLow) {
+      // Current reading is in deep discharge territory (severe sulfation active)
+      final deficit = defaultVoltCriticalLow - voltage;
+      health -= (15.0 + (deficit * 15.0)).clamp(15.0, 45.0);
+    } else if (voltage > defaultVoltOvercharge) {
+      // Overcharge active (electrolyte gassing and grid corrosion)
+      health -= 20.0;
+    }
+
+    if (temperature >= defaultTempCritical) {
+      health -= 25.0; // Critical heat
+    } else if (temperature >= defaultTempWarning) {
+      health -= 10.0; // Warning heat
+    }
+
+    // --- 2. Historical Damage Analysis (if history is present) ---
+    if (history != null && history.isNotEmpty) {
+      int deepDischargeCount = 0;
+      int overchargeCount = 0;
+      int highTempCount = 0;
+      double peakVoltage = 0.0;
+
+      for (final m in history) {
+        if (m.voltage > peakVoltage) peakVoltage = m.voltage;
+        if (m.voltage < defaultVoltCriticalLow) deepDischargeCount++;
+        if (m.voltage > defaultVoltOvercharge) overchargeCount++;
+        if (m.temperature >= defaultTempWarning) highTempCount++;
+      }
+
+      // Past deep discharge damage (permanent sulfation)
+      if (deepDischargeCount > 0) {
+        health -= (deepDischargeCount * 5.0).clamp(5.0, 30.0);
+      }
+
+      // Past overcharge damage (grid corrosion)
+      if (overchargeCount > 0) {
+        health -= (overchargeCount * 4.0).clamp(4.0, 20.0);
+      }
+
+      // Past thermal stress
+      if (highTempCount > 2) {
+        health -= (highTempCount * 2.0).clamp(4.0, 15.0);
+      }
+
+      // Dead / Shorted Cell Detection:
+      // If a 12V battery has >= 3 measurements and never exceeded 10.8V,
+      // one of the 6 cells is damaged/shorted.
+      if (history.length >= 3 && peakVoltage < 10.8 && peakVoltage > 1.0) {
+        health -= 50.0; // Major cell failure
+      } else if (history.length >= 5 && peakVoltage < 12.30 && peakVoltage > 1.0) {
+        // Battery has been cycled but cannot reach full resting voltage (loss of active mass)
+        final gap = (12.50 - peakVoltage).clamp(0.0, 1.5);
+        health -= (gap * 25.0);
+      }
+    }
+
+    // --- 3. Calendar Aging (if installationDate provided) ---
+    if (installationDate != null) {
+      final daysInService = DateTime.now().difference(installationDate).inDays;
+      if (daysInService > 365) {
+        final yearsPastOne = (daysInService - 365) / 365.25;
+        health -= (yearsPastOne * 8.0).clamp(0.0, 40.0);
+      }
+    }
+
+    return health.round().clamp(5, 100);
+  }
+
+  /// Convenience fallback that delegates to [calculateHealth].
+  static int computeSoh(double? peakVoltage) {
+    if (peakVoltage == null || peakVoltage <= 0) return 100;
+    return calculateHealth(voltage: peakVoltage, temperature: 25.0);
+  }
 
   // ─── Battery Health Thresholds ──────────────────────────────
   // SOH (State of Health) based on internal resistance estimation.

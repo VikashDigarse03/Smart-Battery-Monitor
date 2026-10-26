@@ -20,15 +20,6 @@ class DashboardViewModel extends ChangeNotifier {
   bool _isLoading = true;
   bool get isLoading => _isLoading;
 
-  int _totalBatteries = 0;
-  int get totalBatteries => _totalBatteries;
-
-  int _activeBatteries = 0;
-  int get activeBatteries => _activeBatteries;
-
-  int _retiredBatteries = 0;
-  int get retiredBatteries => _retiredBatteries;
-
   int _measuredToday = 0;
   int get measuredToday => _measuredToday;
 
@@ -40,12 +31,6 @@ class DashboardViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Load battery counts
-      final counts = await batteryRepo.getBatteryCounts();
-      _totalBatteries = counts['total'] ?? 0;
-      _activeBatteries = counts['active'] ?? 0;
-      _retiredBatteries = counts['retired'] ?? 0;
-
       // Load today's measurement count
       _measuredToday = await measurementRepo.getMeasurementsCountToday();
 

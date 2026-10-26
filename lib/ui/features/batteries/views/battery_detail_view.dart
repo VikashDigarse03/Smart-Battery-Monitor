@@ -6,8 +6,10 @@ import 'package:fl_chart/fl_chart.dart';
 
 import '../../../../data/repositories/battery_repository.dart';
 import '../../../../data/repositories/measurement_repository.dart';
+import '../../../../data/database/app_database.dart';
 import '../../../../domain/models/models.dart';
 import '../../../core/theme.dart';
+import '../../../core/constants.dart';
 
 /// Shows battery details, current reading, measurement history, and lifecycle events.
 class BatteryDetailView extends StatefulWidget {
@@ -23,6 +25,8 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
   Battery? _battery;
   List<Measurement> _measurements = [];
   bool _isLoading = true;
+  bool _showSoc = true;
+  bool _showSoh = true;
 
   @override
   void initState() {
@@ -34,6 +38,12 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
     setState(() => _isLoading = true);
     final batteryRepo = context.read<BatteryRepository>();
     final measurementRepo = context.read<MeasurementRepository>();
+    final db = context.read<AppDatabase>();
+
+    final showSocSetting = await db.getSetting('show_soc');
+    final showSohSetting = await db.getSetting('show_soh');
+    _showSoc = showSocSetting != 'false';
+    _showSoh = showSohSetting != 'false';
 
     _battery = await batteryRepo.findById(widget.batteryDbId);
     if (_battery != null) {
@@ -168,15 +178,23 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
                           columnSpacing: 16,
-                          columns: const [
-                            DataColumn(label: Text('Date')),
-                            DataColumn(label: Text('V'), numeric: true),
-                            DataColumn(label: Text('A'), numeric: true),
-                            DataColumn(label: Text('°C'), numeric: true),
-                            DataColumn(label: Text('SOC'), numeric: true),
-                            DataColumn(label: Text('SOH'), numeric: true),
+                          columns: [
+                            const DataColumn(label: Text('Date')),
+                            const DataColumn(label: Text('V'), numeric: true),
+                            const DataColumn(label: Text('A'), numeric: true),
+                            const DataColumn(label: Text('°C'), numeric: true),
+                            if (_showSoc) const DataColumn(label: Text('SOC'), numeric: true),
+                            if (_showSoh) const DataColumn(label: Text('SOH'), numeric: true),
                           ],
                           rows: _measurements.map((m) {
+                            final socVal = m.batteryPercent ?? AppConstants.computeSoc(m.voltage);
+                            final healthVal = m.batteryHealth ??
+                                AppConstants.calculateHealth(
+                                  voltage: m.voltage,
+                                  temperature: m.temperature,
+                                  history: _measurements,
+                                  installationDate: battery.installationDate,
+                                );
                             return DataRow(cells: [
                               DataCell(
                                 Text(
@@ -193,8 +211,16 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
                               )),
                               DataCell(Text(m.current.toStringAsFixed(2))),
                               DataCell(Text(m.temperature.toStringAsFixed(1))),
-                              DataCell(Text('${m.batteryPercent ?? '-'}%')),
-                              DataCell(Text('${m.batteryHealth ?? '-'}%')),
+                              if (_showSoc)
+                                DataCell(Text('$socVal%')),
+                              if (_showSoh)
+                                DataCell(Text(
+                                  '$healthVal%',
+                                  style: TextStyle(
+                                    color: AppTheme.getHealthColor(healthVal),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )),
                             ]);
                           }).toList(),
                         ),
@@ -205,11 +231,15 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
             ),
 
             // ── TAB 2: Graphs ──
-            _GraphsTab(measurements: _measurements),
+            _GraphsTab(measurements: _measurements, showSoc: _showSoc),
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/measure/${battery.id}'),
+        onPressed: () async {
+          // Reload data when the measurement screen pops back (returns true on save)
+          final saved = await context.push<bool>('/measure/${battery.id}');
+          if (saved == true) _loadData();
+        },
         icon: const Icon(Icons.speed_rounded),
         label: const Text('Measure Battery', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
@@ -223,7 +253,8 @@ class _BatteryDetailViewState extends State<BatteryDetailView> {
 
 class _GraphsTab extends StatefulWidget {
   final List<Measurement> measurements;
-  const _GraphsTab({required this.measurements});
+  final bool showSoc;
+  const _GraphsTab({required this.measurements, this.showSoc = true});
 
   @override
   State<_GraphsTab> createState() => _GraphsTabState();
@@ -388,22 +419,24 @@ class _GraphsTabState extends State<_GraphsTab> {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 220,
-          child: _EnhancedChartCard(
-            title: 'State of Charge',
-            unit: '%',
-            color: AppTheme.socColor,
-            gradientColors: [AppTheme.socColor, AppTheme.socColor.withValues(alpha: 0.0)],
-            data: data.map((m) => FlSpot(
-              m.measuredAt.millisecondsSinceEpoch.toDouble(),
-              (m.batteryPercent ?? 0).toDouble(),
-            )).toList(),
-            minY: 0,
-            maxY: 100,
+        if (widget.showSoc) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 220,
+            child: _EnhancedChartCard(
+              title: 'State of Charge',
+              unit: '%',
+              color: AppTheme.socColor,
+              gradientColors: [AppTheme.socColor, AppTheme.socColor.withValues(alpha: 0.0)],
+              data: data.map((m) => FlSpot(
+                m.measuredAt.millisecondsSinceEpoch.toDouble(),
+                (m.batteryPercent ?? AppConstants.computeSoc(m.voltage)).toDouble(),
+              )).toList(),
+              minY: 0,
+              maxY: 100,
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 80), // FAB clearance
       ],
     );

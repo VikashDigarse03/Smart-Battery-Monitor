@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -42,9 +43,11 @@ class _ReportsViewState extends State<ReportsView> {
     }
   }
 
-  Future<void> _generateReport(bool isExcel) async {
+  /// [isExcel] determines file type; [openDirectly] skips the share sheet
+  /// and opens the file in the native app instead.
+  Future<void> _generateReport(bool isExcel, {bool openDirectly = false}) async {
     setState(() => _isGenerating = true);
-    
+
     try {
       final repo = context.read<MeasurementRepository>();
       final measurements = await repo.getMeasurementsForReport(
@@ -61,14 +64,25 @@ class _ReportsViewState extends State<ReportsView> {
         return;
       }
 
-      final file = isExcel 
+      final file = isExcel
           ? await ReportGenerator.generateExcelReport(measurements, _startDate, _endDate)
           : await ReportGenerator.generatePdfReport(measurements, _startDate, _endDate);
-          
-      if (mounted) {
+
+      if (!mounted) return;
+
+      if (openDirectly) {
+        // Open in native app (e.g. Excel / PDF viewer)
+        final result = await OpenFile.open(file.path);
+        if (result.type != ResultType.done && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open file: ${result.message}')),
+          );
+        }
+      } else {
+        // Share / Export via share sheet
         final result = await Share.shareXFiles([XFile(file.path)], text: 'Battery Report');
-        if (result.status == ShareResultStatus.success) {
-           ScaffoldMessenger.of(context).showSnackBar(
+        if (result.status == ShareResultStatus.success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Report generated and shared successfully!')),
           );
         }
@@ -87,7 +101,7 @@ class _ReportsViewState extends State<ReportsView> {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM dd, yyyy');
-    
+
     return Scaffold(
       appBar: AppBar(title: const Text('Reports')),
       body: Center(
@@ -107,7 +121,7 @@ class _ReportsViewState extends State<ReportsView> {
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               const SizedBox(height: 32),
-              
+
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.date_range),
@@ -118,28 +132,27 @@ class _ReportsViewState extends State<ReportsView> {
                 ),
               ),
               const SizedBox(height: 32),
-              
+
               if (_isGenerating)
                 const CircularProgressIndicator()
               else ...[
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: FilledButton.icon(
-                    onPressed: () => _generateReport(true),
-                    icon: const Icon(Icons.table_chart),
-                    label: const Text('Export as Excel (.xlsx)'),
-                  ),
+                // ── Excel split-button ──────────────────────────────────
+                _ReportSplitButton(
+                  icon: Icons.table_chart,
+                  label: 'Excel (.xlsx)',
+                  accentColor: Colors.green.shade700,
+                  onExport: () => _generateReport(true),
+                  onOpen: () => _generateReport(true, openDirectly: true),
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _generateReport(false),
-                    icon: const Icon(Icons.picture_as_pdf),
-                    label: const Text('Export as PDF (.pdf)'),
-                  ),
+
+                // ── PDF split-button ────────────────────────────────────
+                _ReportSplitButton(
+                  icon: Icons.picture_as_pdf,
+                  label: 'PDF (.pdf)',
+                  accentColor: Theme.of(context).colorScheme.primary,
+                  onExport: () => _generateReport(false),
+                  onOpen: () => _generateReport(false, openDirectly: true),
                 ),
               ],
             ],
@@ -147,5 +160,112 @@ class _ReportsViewState extends State<ReportsView> {
         ),
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reusable split-button widget
+// ---------------------------------------------------------------------------
+
+class _ReportSplitButton extends StatelessWidget {
+  const _ReportSplitButton({
+    required this.icon,
+    required this.label,
+    required this.accentColor,
+    required this.onExport,
+    required this.onOpen,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accentColor;
+  final VoidCallback onExport;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: Row(
+        children: [
+          // ── Main action: Export & Share ────────────────────────────────
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: accentColor,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.horizontal(left: Radius.circular(12)),
+                ),
+              ),
+              onPressed: onExport,
+              icon: Icon(icon),
+              label: Text('Export as $label'),
+            ),
+          ),
+
+          // Divider between main button and dropdown
+          Container(width: 1, color: Colors.white24),
+
+          // ── Dropdown trigger ───────────────────────────────────────────
+          SizedBox(
+            width: 48,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: accentColor,
+                padding: EdgeInsets.zero,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.horizontal(right: Radius.circular(12)),
+                ),
+              ),
+              onPressed: () => _showMenu(context),
+              child: const Icon(Icons.arrow_drop_down, size: 28),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMenu(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final offset = box.localToGlobal(Offset.zero);
+    final size = box.size;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx,
+        offset.dy + size.height + 4,
+        offset.dx + size.width,
+        0,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'export',
+          child: Row(
+            children: [
+              Icon(Icons.share, size: 20, color: accentColor),
+              const SizedBox(width: 12),
+              const Text('Export & Share'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'open',
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: accentColor),
+              const SizedBox(width: 12),
+              Text('Open in ${label.contains('xlsx') ? 'Excel' : 'PDF viewer'}'),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'export') onExport();
+      if (value == 'open') onOpen();
+    });
   }
 }

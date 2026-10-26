@@ -54,6 +54,9 @@ dependencies:
   # Share Files
   share_plus: ^10.1.4
 
+  # Open Files Directly
+  open_file: ^3.5.10
+
   # Google Fonts
   google_fonts: ^6.2.1
   wifi_iot: ^0.4.0
